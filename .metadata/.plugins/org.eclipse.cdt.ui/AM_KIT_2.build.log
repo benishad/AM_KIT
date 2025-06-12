@@ -1,0 +1,10 @@
+17:40:23 **** Incremental Build of configuration Debug for project AM_KIT_2 ****
+make -j8 all 
+arm-none-eabi-size  AM_KIT_2.elf 
+   text	   data	    bss	    dec	    hex	filename
+  31076	     12	   2052	  33140	   8174	AM_KIT_2.elf
+Finished building: default.size.stdout
+ 
+
+17:40:24 Build Finished. 0 errors, 0 warnings. (took 995ms)
+
