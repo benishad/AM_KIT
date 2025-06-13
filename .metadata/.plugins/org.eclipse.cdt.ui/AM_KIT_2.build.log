@@ -1,10 +1,17 @@
-17:40:23 **** Incremental Build of configuration Debug for project AM_KIT_2 ****
+16:42:29 **** Incremental Build of configuration Debug for project AM_KIT_2 ****
 make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F407xx -c -I../Core/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I../Drivers/CMSIS/Include -I../FATFS/Target -I../FATFS/App -I../Middlewares/Third_Party/FatFs/src -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "AM_KIT_2.elf" @"objects.list"   -mcpu=cortex-m4 -T"D:\WORK\AM_KIT_2\AM_KIT_2\STM32F407VGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="AM_KIT_2.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: AM_KIT_2.elf
+ 
 arm-none-eabi-size  AM_KIT_2.elf 
+arm-none-eabi-objdump -h -S AM_KIT_2.elf  > "AM_KIT_2.list"
    text	   data	    bss	    dec	    hex	filename
-  31076	     12	   2052	  33140	   8174	AM_KIT_2.elf
+  37080	     92	   2420	  39592	   9aa8	AM_KIT_2.elf
 Finished building: default.size.stdout
  
+Finished building: AM_KIT_2.list
+ 
 
-17:40:24 Build Finished. 0 errors, 0 warnings. (took 995ms)
+16:42:31 Build Finished. 0 errors, 0 warnings. (took 2s.590ms)
 

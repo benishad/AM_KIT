@@ -59,37 +59,26 @@ void Error_Handler(void);
 /* Private defines -----------------------------------------------------------*/
 #define ESP_TX_Pin GPIO_PIN_2
 #define ESP_TX_GPIO_Port GPIOA
-
 #define ESP_RX_Pin GPIO_PIN_3
 #define ESP_RX_GPIO_Port GPIOA
-
 #define RX_LED_Pin GPIO_PIN_8
 #define RX_LED_GPIO_Port GPIOE
-
 #define TX_LED_Pin GPIO_PIN_9
 #define TX_LED_GPIO_Port GPIOE
-
 #define STATUS_LED_Pin GPIO_PIN_10
 #define STATUS_LED_GPIO_Port GPIOE
-
 #define M_PWR_KEY_Pin GPIO_PIN_11
 #define M_PWR_KEY_GPIO_Port GPIOE
-
 #define ESP_EN_Pin GPIO_PIN_12
 #define ESP_EN_GPIO_Port GPIOE
-
 #define USIM_RESET_Pin GPIO_PIN_13
 #define USIM_RESET_GPIO_Port GPIOE
-
 #define SIM_TX_Pin GPIO_PIN_10
 #define SIM_TX_GPIO_Port GPIOB
-
 #define SIM_RX_Pin GPIO_PIN_11
 #define SIM_RX_GPIO_Port GPIOB
-
 #define UART_TX_Pin GPIO_PIN_9
 #define UART_TX_GPIO_Port GPIOA
-
 #define UART_RX_Pin GPIO_PIN_10
 #define UART_RX_GPIO_Port GPIOA
 

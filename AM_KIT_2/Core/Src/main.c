@@ -23,6 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
+#include <stdio.h>
 #include <string.h>
 
 /* USER CODE END Includes */
@@ -43,6 +44,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+RTC_HandleTypeDef hrtc;
+
 SD_HandleTypeDef hsd;
 
 TIM_HandleTypeDef htim7;
@@ -53,8 +56,12 @@ UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
 
-uint8_t txBuf[] = "Hello from STM32 IRQ!\r\n";
-uint8_t rxByte;           // 1바이트 수신 버퍼
+static uint16_t ms_tick_1       = 0;                // 1 ms 카운터
+static uint16_t alive_counter   = 0;                // 10 s 생존 메시지 카운터
+
+uint8_t txBuf[]                 = "Hello from STM32 IRQ!\r\n";
+uint8_t rxByte;                                     // 1 바이트 UART RX 버퍼
+uint8_t txAlive[]               = "ALIVE\n";        // 10 s 마다 보낼 메시지
 
 /* USER CODE END PV */
 
@@ -66,6 +73,7 @@ static void MX_SDIO_SD_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_RTC_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -110,6 +118,7 @@ int main(void)
   MX_USART1_UART_Init();
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
+  MX_RTC_Init();
   /* USER CODE BEGIN 2 */
 
   // 타이머 인터럽트 모드로 시작 (TIM7은 이미 PSC/ARR로 1 kHz, 1 ms 인터럽트로 설정되어 있다고 가정)
@@ -145,7 +154,7 @@ int main(void)
     // 파일 열기 실패 처리
     Error_Handler();
   }
-   /* 3) 파일에 데이터 쓰기 */
+  /* 3) 파일에 데이터 쓰기 */
   const char *data = "Hello, STM32 SD Card! \n test";
   fres = f_write(&SDFile, data, strlen(data), &bw);
   if (fres != FR_OK || bw < strlen(data))
@@ -172,7 +181,7 @@ int main(void)
   fres = f_read(&SDFile, readBuffer, sizeof(readBuffer) - 1, &br);
   if (fres != FR_OK || br == 0)
   {
-     // 파일 읽기 실패 처리
+    // 파일 읽기 실패 처리
     f_close(&SDFile);
     Error_Handler();
   }
@@ -181,7 +190,7 @@ int main(void)
   fres = f_mount(NULL, SDPath, 1); // SDPath는 "0:"으로 설정되어 있어야 함 마운트 0, 언마운트 1
   if (fres != FR_OK)
   {
-     // 언마운트 실패 처리
+    // 언마운트 실패 처리
     Error_Handler();
   }
 
@@ -221,7 +230,8 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSE;
+  RCC_OscInitStruct.LSEState = RCC_LSE_ON;
   RCC_OscInitStruct.HSIState = RCC_HSI_ON;
   RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
@@ -248,6 +258,88 @@ void SystemClock_Config(void)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief RTC Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_RTC_Init(void)
+{
+
+  /* USER CODE BEGIN RTC_Init 0 */
+
+  /* USER CODE END RTC_Init 0 */
+
+  RTC_TimeTypeDef sTime = {0};
+  RTC_DateTypeDef sDate = {0};
+  RTC_AlarmTypeDef sAlarm = {0};
+
+  /* USER CODE BEGIN RTC_Init 1 */
+
+  /* USER CODE END RTC_Init 1 */
+
+  /** Initialize RTC Only
+  */
+  hrtc.Instance = RTC;
+  hrtc.Init.HourFormat = RTC_HOURFORMAT_24;
+  hrtc.Init.AsynchPrediv = 127;
+  hrtc.Init.SynchPrediv = 255;
+  hrtc.Init.OutPut = RTC_OUTPUT_DISABLE;
+  hrtc.Init.OutPutPolarity = RTC_OUTPUT_POLARITY_HIGH;
+  hrtc.Init.OutPutType = RTC_OUTPUT_TYPE_OPENDRAIN;
+  if (HAL_RTC_Init(&hrtc) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /* USER CODE BEGIN Check_RTC_BKUP */
+
+  /* USER CODE END Check_RTC_BKUP */
+
+  /** Initialize RTC and set the Time and Date
+  */
+  sTime.Hours = 0x0;
+  sTime.Minutes = 0x0;
+  sTime.Seconds = 0x0;
+  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  sDate.WeekDay = RTC_WEEKDAY_MONDAY;
+  sDate.Month = RTC_MONTH_JANUARY;
+  sDate.Date = 0x1;
+  sDate.Year = 0x0;
+
+  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Enable the Alarm A
+  */
+  sAlarm.AlarmTime.Hours = 0x0;
+  sAlarm.AlarmTime.Minutes = 0x0;
+  sAlarm.AlarmTime.Seconds = 0x0;
+  sAlarm.AlarmTime.SubSeconds = 0x0;
+  sAlarm.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  sAlarm.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
+  sAlarm.AlarmMask = RTC_ALARMMASK_NONE;
+  sAlarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDMASK_ALL;
+  sAlarm.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
+  sAlarm.AlarmDateWeekDay = 0x1;
+  sAlarm.Alarm = RTC_ALARM_A;
+  if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BCD) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN RTC_Init 2 */
+
+  /* USER CODE END RTC_Init 2 */
+
 }
 
 /**
@@ -429,12 +521,12 @@ static void MX_GPIO_Init(void)
 /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
   __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
-  __HAL_RCC_GPIOC_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOE, RX_LED_Pin|TX_LED_Pin|STATUS_LED_Pin|ESP_EN_Pin
@@ -469,24 +561,59 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
-/* tim 7 인터럽트 처리부 */
-static uint16_t ms_tick_1 = 0;      // 1 ms마다 1씩 증가
 
+// =======================================================================================================
+// =======================================================================================================
+/* tim 7 인터럽트 처리부 */
+/* TIM7 업데이트 인터럽트 콜백 */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance == TIM7)
   {
     ms_tick_1++;
+    alive_counter++;
+
     if (ms_tick_1 >= 200)         // 200 ms 경과 체크
     {
       ms_tick_1 = 0;
       HAL_GPIO_TogglePin(STATUS_LED_GPIO_Port, STATUS_LED_Pin);
     }
+
+    if (alive_counter >= 10000)    // 10 s 경과 체크
+    {
+      alive_counter = 0;
+
+      /* 1) RTC에서 현재 시간 읽기 */
+      RTC_TimeTypeDef sTime;
+      RTC_DateTypeDef sDate;
+      HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
+      HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+
+      /* 2) 문자열로 포맷 */
+      char buf[64];
+      // int len = snprintf(buf, sizeof(buf), "ALIVE: %02d:%02d:%02d %02d/%02d/%04d\n",
+      //                   sTime.Hours, sTime.Minutes, sTime.Seconds,
+      //                   sDate.Date, sDate.Month, 2000 + sDate.Year);
+
+      int len = snprintf(buf, sizeof(buf), "ALIVE: %02d:%02d:%02d\n",
+                        sTime.Hours, sTime.Minutes, sTime.Seconds);
+
+      // 생존 메시지 전송
+      //HAL_UART_Transmit_IT(&huart1, txAlive, sizeof(txAlive) - 1);
+      //HAL_UART_Transmit_IT(&huart2, txAlive, sizeof(txAlive) - 1);
+      //HAL_UART_Transmit_IT(&huart3, txAlive, sizeof(txAlive) - 1);
+
+      /* 3) UART로 생존 및 시간 전송 */
+      // UART1로 현재 시간 전송
+      HAL_UART_Transmit_IT(&huart1, (uint8_t *)buf, len);
+    }
   }
 }
 
+// =======================================================================================================
+// =======================================================================================================
 /* uart 1 처리부 */
-/* UART 수신 완료 콜백 */
+/* UART Rx Complete 콜백 */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
   if (huart->Instance == USART1)
@@ -494,21 +621,19 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     // 1) 에코: 받은 바이트를 바로 송신
     HAL_UART_Transmit_IT(&huart1, &rxByte, 1);
 
-    // 수신했으면 LED 켜기
-    HAL_GPIO_WritePin(RX_LED_GPIO_Port, RX_LED_Pin, GPIO_PIN_SET);
-
-    HAL_GPIO_WritePin(RX_LED_GPIO_Port, RX_LED_Pin, GPIO_PIN_RESET);
-
     // 2) 다시 수신 대기
     HAL_UART_Receive_IT(&huart1, &rxByte, 1);
   }
 }
 
-/* UART 전송 완료 콜백 (필요 시) */
+/* UART 전송 완료 콜백 (필요 시..) */
 void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
   // 전송 완료 후 다른 처리가 필요하면 여기에…
 }
+
+// ================================================================================
+// ================================================================================
 
 /* USER CODE END 4 */
 
