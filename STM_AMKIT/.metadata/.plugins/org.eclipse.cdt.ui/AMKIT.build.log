@@ -1,0 +1,17 @@
+17:05:07 **** Incremental Build of configuration Debug for project AMKIT ****
+make -j8 all 
+arm-none-eabi-gcc "../Core/Src/main.c" -mcpu=cortex-m4 -std=gnu11 -g3 -DDEBUG -DUSE_HAL_DRIVER -DSTM32F407xx -c -I../Core/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc -I../Drivers/STM32F4xx_HAL_Driver/Inc/Legacy -I../Drivers/CMSIS/Device/ST/STM32F4xx/Include -I../Drivers/CMSIS/Include -I../FATFS/Target -I../FATFS/App -I../Middlewares/Third_Party/FatFs/src -O0 -ffunction-sections -fdata-sections -Wall -fstack-usage -fcyclomatic-complexity -MMD -MP -MF"Core/Src/main.d" -MT"Core/Src/main.o" --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -o "Core/Src/main.o"
+arm-none-eabi-gcc -o "AMKIT.elf" @"objects.list"   -mcpu=cortex-m4 -T"D:\WORK\AM_KIT\STM_AMKIT\AMKIT\STM32F407VGTX_FLASH.ld" --specs=nosys.specs -Wl,-Map="AMKIT.map" -Wl,--gc-sections -static --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+Finished building target: AMKIT.elf
+ 
+arm-none-eabi-size  AMKIT.elf 
+arm-none-eabi-objdump -h -S AMKIT.elf  > "AMKIT.list"
+   text	   data	    bss	    dec	    hex	filename
+  37096	     92	   2532	  39720	   9b28	AMKIT.elf
+Finished building: default.size.stdout
+ 
+Finished building: AMKIT.list
+ 
+
+17:05:09 Build Finished. 0 errors, 0 warnings. (took 2s.707ms)
+
