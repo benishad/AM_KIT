@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include <string.h>
 
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -35,6 +36,9 @@
 
 /* Private define ------------------------------------------------------------*/
 /* USER CODE BEGIN PD */
+
+#define RTC_MAGIC_REG   RTC_BKP_DR1     // RTC 백업 레지스터 1번 사용
+#define RTC_MAGIC_VALUE 0x32F2          // RTC 초기화 확인을 위한 매직 넘버
 
 /* USER CODE END PD */
 
@@ -47,6 +51,8 @@
 RTC_HandleTypeDef hrtc;
 
 SD_HandleTypeDef hsd;
+
+SPI_HandleTypeDef hspi1;
 
 TIM_HandleTypeDef htim7;
 
@@ -63,6 +69,9 @@ uint8_t txBuf[]                 = "Hello from STM32 IRQ!\r\n";
 uint8_t rxByte;                                     // 1 바이트 UART RX 버퍼
 uint8_t txAlive[]               = "ALIVE\n";        // 10 s 마다 보낼 메시지
 
+RTC_TimeTypeDef g_Time;                             // RTC 시간 구조체
+RTC_DateTypeDef g_Date;                             // RTC 날짜 구조체
+
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -74,6 +83,7 @@ static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART3_UART_Init(void);
 static void MX_RTC_Init(void);
+static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -91,6 +101,17 @@ int main(void)
 {
 
   /* USER CODE BEGIN 1 */
+
+  // =======================================================================================================
+  //    __  __            _____  _   _ 
+  //   |  \/  |    /\    |_   _|| \ | |
+  //   | \  / |   /  \     | |  |  \| |
+  //   | |\/| |  / /\ \    | |  | . ` |
+  //   | |  | | / ____ \  _| |_ | |\  |
+  //   |_|  |_|/_/    \_\|_____||_| \_|
+  //                                   
+  //         
+  // =======================================================================================================
 
   /* USER CODE END 1 */
 
@@ -119,6 +140,7 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   MX_RTC_Init();
+  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
 
   // 타이머 인터럽트 모드로 시작 (TIM7은 이미 PSC/ARR로 1 kHz, 1 ms 인터럽트로 설정되어 있다고 가정)
@@ -230,13 +252,12 @@ void SystemClock_Config(void)
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
   */
-  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSI|RCC_OSCILLATORTYPE_LSE;
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE|RCC_OSCILLATORTYPE_LSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.LSEState = RCC_LSE_ON;
-  RCC_OscInitStruct.HSIState = RCC_HSI_ON;
-  RCC_OscInitStruct.HSICalibrationValue = RCC_HSICALIBRATION_DEFAULT;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSI;
-  RCC_OscInitStruct.PLL.PLLM = 8;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = 4;
   RCC_OscInitStruct.PLL.PLLN = 168;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 7;
@@ -269,12 +290,22 @@ static void MX_RTC_Init(void)
 {
 
   /* USER CODE BEGIN RTC_Init 0 */
+  // =======================================================================================================
+  //    __  __ __   __           _____  _______  _____            _____         _  _   
+  //   |  \/  |\ \ / /          |  __ \|__   __|/ ____|          |_   _|       (_)| |  
+  //   | \  / | \ V /   ______  | |__) |  | |  | |       ______    | |   _ __   _ | |_ 
+  //   | |\/| |  > <   |______| |  _  /   | |  | |      |______|   | |  | '_ \ | || __|
+  //   | |  | | / . \           | | \ \   | |  | |____            _| |_ | | | || || |_ 
+  //   |_|  |_|/_/ \_\          |_|  \_\  |_|   \_____|          |_____||_| |_||_| \__|
+  //                                                                                   
+  //  
+  // =======================================================================================================
 
   /* USER CODE END RTC_Init 0 */
 
-  RTC_TimeTypeDef sTime = {0};
-  RTC_DateTypeDef sDate = {0};
-  RTC_AlarmTypeDef sAlarm = {0};
+  // RTC_TimeTypeDef sTime = {0};
+  // RTC_DateTypeDef sDate = {0};
+  // RTC_AlarmTypeDef sAlarm = {0};
 
   /* USER CODE BEGIN RTC_Init 1 */
 
@@ -296,47 +327,108 @@ static void MX_RTC_Init(void)
 
   /* USER CODE BEGIN Check_RTC_BKUP */
 
+  // RTC 백업 레지스터를 읽어 초기화 여부 확인
+  if (HAL_RTCEx_BKUPRead(&hrtc, RTC_MAGIC_REG) != RTC_MAGIC_VALUE)
+  {
+    // RTC 백업 레지스터가 초기화되지 않았거나 값이 일치하지 않으면 RTC를 초기화
+    // RTC 백업 레지스터에 초기화 마크를 기록
+    HAL_RTCEx_BKUPWrite(&hrtc, RTC_MAGIC_REG, RTC_MAGIC_VALUE);
+
+    // RTC 시간과 날짜를 초기화
+    g_Time.Hours = 0x0;  // 00:00:00
+    g_Time.Minutes = 0x0;
+    g_Time.Seconds = 0x0;
+    g_Time.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+    g_Time.StoreOperation = RTC_STOREOPERATION_RESET;
+    
+    if (HAL_RTC_SetTime(&hrtc, &g_Time, RTC_FORMAT_BCD) != HAL_OK)
+    {
+      // 초기화 실패 처리
+      Error_Handler();
+    }
+    g_Date.WeekDay = RTC_WEEKDAY_MONDAY;    // 월요일
+    g_Date.Month = RTC_MONTH_JANUARY;       // 1월
+    g_Date.Date = 0x1;                      // 1일
+    g_Date.Year = 0x25;                     // 2025년 (BCD 형식으로 25)
+
+    if (HAL_RTC_SetDate(&hrtc, &g_Date, RTC_FORMAT_BCD) != HAL_OK)
+    {
+      // 초기화 실패 처리
+      Error_Handler();
+    }
+
+  }
+  else
+  {
+    // RTC 백업 레지스터가 초기화되어 있으면 현재 시간과 날짜를 읽어옴
+    HAL_RTC_GetTime(&hrtc, &g_Time, RTC_FORMAT_BCD);
+    HAL_RTC_GetDate(&hrtc, &g_Date, RTC_FORMAT_BCD);
+  }
+
+
   /* USER CODE END Check_RTC_BKUP */
 
   /** Initialize RTC and set the Time and Date
   */
-  sTime.Hours = 0x0;
-  sTime.Minutes = 0x0;
-  sTime.Seconds = 0x0;
-  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
-  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
-  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
-  {
-    Error_Handler();
-  }
-  sDate.WeekDay = RTC_WEEKDAY_MONDAY;
-  sDate.Month = RTC_MONTH_JANUARY;
-  sDate.Date = 0x1;
-  sDate.Year = 0x0;
+  // sTime.Hours = 0x0;
+  // sTime.Minutes = 0x0;
+  // sTime.Seconds = 0x0;
+  // sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  // sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+  // if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
+  // {
+  //   Error_Handler();
+  // }
+  // sDate.WeekDay = RTC_WEEKDAY_MONDAY;
+  // sDate.Month = RTC_MONTH_JANUARY;
+  // sDate.Date = 0x1;
+  // sDate.Year = 0x0;
 
-  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
-  {
-    Error_Handler();
-  }
+  // if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
+  // {
+  //   Error_Handler();
+  // }
 
   /** Enable the Alarm A
   */
-  sAlarm.AlarmTime.Hours = 0x0;
-  sAlarm.AlarmTime.Minutes = 0x0;
-  sAlarm.AlarmTime.Seconds = 0x0;
-  sAlarm.AlarmTime.SubSeconds = 0x0;
-  sAlarm.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
-  sAlarm.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
-  sAlarm.AlarmMask = RTC_ALARMMASK_NONE;
-  sAlarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDMASK_ALL;
-  sAlarm.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
-  sAlarm.AlarmDateWeekDay = 0x1;
-  sAlarm.Alarm = RTC_ALARM_A;
-  if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BCD) != HAL_OK)
-  {
-    Error_Handler();
-  }
+  // sAlarm.AlarmTime.Hours = 0x0;
+  // sAlarm.AlarmTime.Minutes = 0x0;
+  // sAlarm.AlarmTime.Seconds = 0x0;
+  // sAlarm.AlarmTime.SubSeconds = 0x0;
+  // sAlarm.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  // sAlarm.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
+  // sAlarm.AlarmMask = RTC_ALARMMASK_NONE;
+  // sAlarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDMASK_ALL;
+  // sAlarm.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
+  // sAlarm.AlarmDateWeekDay = 0x1;
+  // sAlarm.Alarm = RTC_ALARM_A;
+  // if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BCD) != HAL_OK)
+  // {
+  //   Error_Handler();
+  // }
   /* USER CODE BEGIN RTC_Init 2 */
+
+  //  /** Initialize RTC and set the Time and Date
+  // */
+  // g_Time.Hours = 0x0;
+  // g_Time.Minutes = 0x0;
+  // g_Time.Seconds = 0x0;
+  // g_Time.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  // g_Time.StoreOperation = RTC_STOREOPERATION_RESET;
+  // if (HAL_RTC_SetTime(&hrtc, &g_Time, RTC_FORMAT_BCD) != HAL_OK)
+  // {
+  //   Error_Handler();
+  // }
+  // g_Date.WeekDay = RTC_WEEKDAY_MONDAY;
+  // g_Date.Month = RTC_MONTH_JANUARY;
+  // g_Date.Date = 0x1;
+  // g_Date.Year = 0x0;
+
+  // if (HAL_RTC_SetDate(&hrtc, &g_Date, RTC_FORMAT_BCD) != HAL_OK)
+  // {
+  //   Error_Handler();
+  // }
+
 
   /* USER CODE END RTC_Init 2 */
 
@@ -369,6 +461,44 @@ static void MX_SDIO_SD_Init(void)
 
 
   /* USER CODE END SDIO_Init 2 */
+
+}
+
+/**
+  * @brief SPI1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI1_Init(void)
+{
+
+  /* USER CODE BEGIN SPI1_Init 0 */
+
+  /* USER CODE END SPI1_Init 0 */
+
+  /* USER CODE BEGIN SPI1_Init 1 */
+
+  /* USER CODE END SPI1_Init 1 */
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_1EDGE;
+  hspi1.Init.NSS = SPI_NSS_SOFT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_2;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI1_Init 2 */
+
+  /* USER CODE END SPI1_Init 2 */
 
 }
 
@@ -521,16 +651,22 @@ static void MX_GPIO_Init(void)
 /* USER CODE END MX_GPIO_Init_1 */
 
   /* GPIO Ports Clock Enable */
+  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
-  __HAL_RCC_GPIOE_CLK_ENABLE();
   __HAL_RCC_GPIOB_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOE, RX_LED_Pin|TX_LED_Pin|STATUS_LED_Pin|ESP_EN_Pin
                           |USIM_RESET_Pin|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
+
+  /*Configure GPIO pins : PE2 PE3 PE0 PE1 */
+  GPIO_InitStruct.Pin = GPIO_PIN_2|GPIO_PIN_3|GPIO_PIN_0|GPIO_PIN_1;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
 
   /*Configure GPIO pins : RX_LED_Pin TX_LED_Pin STATUS_LED_Pin ESP_EN_Pin
                            USIM_RESET_Pin PE14 PE15 */
@@ -563,6 +699,14 @@ static void MX_GPIO_Init(void)
 
 
 // =======================================================================================================
+//    _______  _____  __  __       ______ 
+//   |__   __||_   _||  \/  |     |____  |
+//      | |     | |  | \  / | ______  / / 
+//      | |     | |  | |\/| ||______|/ /  
+//      | |    _| |_ | |  | |       / /   
+//      |_|   |_____||_|  |_|      /_/    
+//                                        
+//      
 // =======================================================================================================
 /* tim 7 인터럽트 처리부 */
 /* TIM7 업데이트 인터럽트 콜백 */
@@ -576,7 +720,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
     if (ms_tick_1 >= 200)         // 200 ms 경과 체크
     {
       ms_tick_1 = 0;
-      HAL_GPIO_TogglePin(STATUS_LED_GPIO_Port, STATUS_LED_Pin);
+      // HAL_GPIO_TogglePin(STATUS_LED_GPIO_Port, STATUS_LED_Pin);
     }
 
     if (alive_counter >= 10000)    // 10 s 경과 체크
@@ -584,10 +728,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       alive_counter = 0;
 
       /* 1) RTC에서 현재 시간 읽기 */
-      RTC_TimeTypeDef sTime;
-      RTC_DateTypeDef sDate;
-      HAL_RTC_GetTime(&hrtc, &sTime, RTC_FORMAT_BIN);
-      HAL_RTC_GetDate(&hrtc, &sDate, RTC_FORMAT_BIN);
+      // RTC_TimeTypeDef sTime;
+      // RTC_DateTypeDef sDate;
+      HAL_RTC_GetTime(&hrtc, &g_Time, RTC_FORMAT_BIN);
+      HAL_RTC_GetDate(&hrtc, &g_Date, RTC_FORMAT_BIN);
 
       /* 2) 문자열로 포맷 */
       char buf[64];
@@ -595,8 +739,8 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       //                   sTime.Hours, sTime.Minutes, sTime.Seconds,
       //                   sDate.Date, sDate.Month, 2000 + sDate.Year);
 
-      int len = snprintf(buf, sizeof(buf), "ALIVE: %02d:%02d:%02d\n",
-                        sTime.Hours, sTime.Minutes, sTime.Seconds);
+      int len = snprintf(buf, sizeof(buf), "ALIVE: %02d.%02d / %02d:%02d:%02d\n",
+                        g_Date.Month,g_Date.Date, g_Time.Hours, g_Time.Minutes, g_Time.Seconds);
 
       // 생존 메시지 전송
       //HAL_UART_Transmit_IT(&huart1, txAlive, sizeof(txAlive) - 1);
@@ -611,6 +755,14 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 }
 
 // =======================================================================================================
+//    _    _           _____  _______      __ 
+//   | |  | |   /\    |  __ \|__   __|    /_ |
+//   | |  | |  /  \   | |__) |  | | ______ | |
+//   | |  | | / /\ \  |  _  /   | ||______|| |
+//   | |__| |/ ____ \ | | \ \   | |        | |
+//    \____//_/    \_\|_|  \_\  |_|        |_|
+//                                            
+// 
 // =======================================================================================================
 /* uart 1 처리부 */
 /* UART Rx Complete 콜백 */
