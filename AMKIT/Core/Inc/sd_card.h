@@ -1,14 +1,23 @@
-#ifndef __SD_CARD_H__
-#define __SD_CARD_H__
+/*
+ * sd_card.h
+ *
+ *  Created on: Jun 17, 2025
+ *      Author: PROGRAM
+ */
 
-// Includes ------------------------------------------------------------------
-#include "main.h"
-#include "fatfs.h"
+#ifndef INC_SD_CARD_H_
+#define INC_SD_CARD_H_
 
 
-// Function prototypes -------------------------------------------------------
-void sd_card_boot_init(void);
 
-// Global variables ----------------------------------------------------------
 
-#endif /* __MAIN_H__ */
+
+// =========================================================
+void SD_Card_Boot(void);
+void SD_Card_Log(const char *logMessage);
+
+const char* SD_Card_Get_WiFi_SSID(void);
+const char* SD_Card_Get_WiFi_Password(void);
+
+
+#endif /* INC_SD_CARD_H_ */

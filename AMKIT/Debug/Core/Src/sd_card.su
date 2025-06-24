@@ -1,0 +1,4 @@
+../Core/Src/sd_card.c:16:6:SD_Card_Boot	1216	static
+../Core/Src/sd_card.c:142:13:SD_Card_Get_WiFi_SSID	1200	static
+../Core/Src/sd_card.c:203:13:SD_Card_Get_WiFi_Password	1208	static
+../Core/Src/sd_card.c:271:6:SD_Card_Log	1152	static

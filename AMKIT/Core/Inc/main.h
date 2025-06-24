@@ -31,13 +31,23 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdio.h>
+#include <string.h>
 
 #include "sd_card.h"
+#include "esp32_at.h"
+#include "server_api.h"
 
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
+
+extern UART_HandleTypeDef huart1;
+extern UART_HandleTypeDef huart2;
+extern UART_HandleTypeDef huart3;
+
+
 
 /* USER CODE END ET */
 
@@ -93,6 +103,41 @@ void Error_Handler(void);
 #define DIP_2_GPIO_Port GPIOE
 
 /* USER CODE BEGIN Private defines */
+
+
+#ifdef WIN32
+
+	#define		__CCMRAM__
+
+#else
+
+	#ifdef STM32F407xx
+
+		//	64k 사용 가능
+		//	dma 를 거치지 않고 cpu 에서 제어 가능
+		#define		__CCMRAM__								__attribute__( ( section( ".ccmram" ) ) )
+
+	#else
+
+		#define		__CCMRAM__
+
+	#endif
+
+#endif
+
+
+// 기기 상태 모드
+enum DeviceMode {
+    MODE_MASTER = 0,          // 마스터 모드
+    MODE_SLAVE,               // 슬레이브 모드
+    MODE_AP,                  // AP 모드
+    MODE_ERROR,               // 에러 모드
+    MODE_MAINTENANCE,          // 유지보수 모드
+    MODE_UNKNOWN              // 알 수 없는 모드
+  
+};
+
+
 
 /* USER CODE END Private defines */
 

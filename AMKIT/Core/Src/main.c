@@ -23,8 +23,7 @@
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 
-#include <stdio.h>
-#include <string.h>
+
 
 
 /* USER CODE END Includes */
@@ -39,6 +38,8 @@
 
 #define RTC_MAGIC_REG   RTC_BKP_DR1     // RTC 백업 레지스터 1번 사용
 #define RTC_MAGIC_VALUE 0x32F2          // RTC 초기화 확인을 위한 매직 넘버
+
+
 
 /* USER CODE END PD */
 
@@ -62,15 +63,30 @@ UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
 
-static uint16_t ms_tick_1       = 0;                // 1 ms 카운터
-static uint16_t alive_counter   = 0;                // 10 s 생존 메시지 카운터
 
+// 전역 변수 선언
+static uint16_t ms_tick_1       = 0;                // 1 ms 카운터
+
+
+// STM UART 변수 선언
+static uint16_t alive_counter   = 0;                // 10 s 생존 메시지 카운터
 uint8_t txBuf[]                 = "Hello from STM32 IRQ!\r\n";
 uint8_t rxByte;                                     // 1 바이트 UART RX 버퍼
 uint8_t txAlive[]               = "ALIVE\n";        // 10 s 마다 보낼 메시지
 
+
+// ESP32 AT 명령어를 위한 변수 선언
+uint8_t atCmd[]                 = "AT+GMR\r\n";
+// uint8_t g_atRxByte;                                 // 1바이트씩 받기              / 외부 선언 해줬음
+// static char  atLineBuf[AT_RX_BUF_SIZE];             // AT 명령어 수신 버퍼         / 외부 선언 해줬음
+// static uint8_t atIdx            = 0;                // AT 명령어 수신 인덱스       / 외부 선언 해줬음
+
+// RTC 변수 선언
 RTC_TimeTypeDef g_Time;                             // RTC 시간 구조체
 RTC_DateTypeDef g_Date;                             // RTC 날짜 구조체
+
+// 모드 변수
+uint8_t g_mode = 0;                                 // 현재 모드 (0: 마스터, 1: 슬레이브, 2: AP 등)
 
 /* USER CODE END PV */
 
@@ -156,91 +172,109 @@ int main(void)
     Error_Handler();
   }
 
-  FATFS SDFatFS;  // SD 카드 FATFS
-  FIL SDFile;     // SD 카드 파일 핸들
-  FRESULT fres;   // FATFS 함수 결과
-  UINT bw, br;    // 바이트 쓰기/읽기 변수
+  // 2) 와이파이 설정 이후에 UART2 인터럽트 활성화 (1바이트씩)
+  // if (HAL_UART_Receive_IT(&huart2, &g_atRxByte, 1) != HAL_OK)
+  // {
+  //   // 수신 시작 실패 처리
+  //   Error_Handler();
+  // }
 
-  /* 1) SD 카드 마운트 (SDPath는 fatfs.c 에 extern으로 선언됨) */
-  fres = f_mount(&SDFatFS, SDPath, 1);    // SDPath는 "0:"으로 설정되어 있어야 함
-  if (fres != FR_OK)
-  {
-    // 마운트 실패 처리
-    Error_Handler();
-  }
 
-  /* 2) 새 파일 생성(덮어쓰기) */
-  fres = f_open(&SDFile, "test.txt", FA_CREATE_ALWAYS | FA_WRITE);
-  if (fres != FR_OK)
-  {
-    // 파일 열기 실패 처리
-    Error_Handler();
-  }
-  /* 3) 파일에 데이터 쓰기 */
-  const char *data = "Hello, STM32 SD Card! \n test";
-  fres = f_write(&SDFile, data, strlen(data), &bw);
-  if (fres != FR_OK || bw < strlen(data))
-  {
-    // 파일 쓰기 실패 처리
-    f_close(&SDFile);
-    Error_Handler();
-  }
-  /* 4) 파일 닫기 */
-  fres = f_close(&SDFile);
-  if (fres != FR_OK)
-  {
-    // 파일 닫기 실패 처리
-    Error_Handler();
-  }
-  /* 5) 파일 읽기 */
-  fres = f_open(&SDFile, "test.txt", FA_READ);
-  if (fres != FR_OK)
-  {
-    // 파일 열기 실패 처리
-    Error_Handler();
-  }
-  char readBuffer[64];    // 읽기 버퍼
-  fres = f_read(&SDFile, readBuffer, sizeof(readBuffer) - 1, &br);
-  if (fres != FR_OK || br == 0)
-  {
-    // 파일 읽기 실패 처리
-    f_close(&SDFile);
-    Error_Handler();
-  }
-  readBuffer[br] = '\0'; // 문자열 종료
-  /* 6) SD카드 언마운트*/
-  fres = f_mount(NULL, SDPath, 1); // SDPath는 "0:"으로 설정되어 있어야 함 마운트 0, 언마운트 1
-  if (fres != FR_OK)
-  {
-    // 언마운트 실패 처리
-    Error_Handler();
-  }
+  // ──────────────────────────────────────────────────────────────────────────────
+
+  SD_Card_Boot(); // SD 카드 초기화 및 테스트 / 와이파이 파일 확인
+
+  // SD카드 로그 기록
+  SD_Card_Log("STM32 Booted Successfully!\n");
+
+  // ──────────────────────────────────────────────────────────────────────────────
+
+  // ESP_AT_Boot(); // ESP32 AT 명령어 초기화 및 버전 조회
+  ESP_AT_Boot_5();
+
+  // ESP32 AT 명령어를 통해 펌웨어 버전 조회
+  ESP_AT_Send_Command_Sync("AT+GMR\r\n");
+
+  // ESP32 AT 명령어를 통해 현재 WiFi 모드 조회
+  ESP_AT_Send_Command_Sync("AT+CWMODE?\r\n");
+
+  // ESP32 AT 명령어를 통해 WiFi 모드 설정
+  ESP_AT_Send_Command_Sync("AT+CWMODE=1\r\n");
+
+  // 연결 가능한 WiFi AP 목록 조회
+  ESP_AT_Send_Command_Sync("AT+CWLAP\r\n");
+  
+  // 와이파이는 2.4GHz 대역만 지원하므로, 5GHz AP는 연결하지 않음, 아니 안테나 없어서 지금까지 에러남 안테나 달아야함
+  // ESP_AT_Send_Command_Sync("AT+CWJAP=\"ANDAMIRO\",\"amazon@@\"\r\n");               // 
+  
+  // SD카드에서 WiFi SSID와 비밀번호를 읽어와서 연결
+  ESP_AT_Send_WiFi_Config();
+
+  // SNTP 서버 연결 및 시간 동기화
+  ESP_AT_Set_SNTP_Time(AT_SNTP_UTC_OFFSET_KR);
+
+  // ──────────────────────────────────────────────────────────────────────────────
+  // 토큰 요청 및 반환
+  ESP_AT_Get_Token();
+  // ESP_AT_Send_Json_test();
+
+  // ESP32 기기 MAC 주소 조회 (기기 고유값)
+  // ESP_AT_Send_Command_Sync_Get_Result("AT+CIPSTAMAC?\r\n");
+  ESP_AT_Get_MAC_Address();
+
+  // SD카드 로그 기록
+  SD_Card_Log("ESP32 AT Firmware Version Retrieved Successfully!\n");
+
+  // ──────────────────────────────────────────────────────────────────────────────
+
+  // WIFI 연결
+  // ESP_AT_Setup_WiFi();
 
 
 
+  // dip 스위치 1번 상태 OFF(default) 상태일 때, 마스터 모드로 가정
+  if (HAL_GPIO_ReadPin(DIP_1_GPIO_Port, DIP_1_Pin) == GPIO_PIN_RESET)
+  {
+    g_mode = MODE_MASTER; // 마스터 모드로 설정
+  }
+  else
+  {
+    g_mode = MODE_SLAVE; // 슬레이브 모드로 설정
+  }
+  
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-	  // HAL_GPIO_WritePin(STATUS_LED_GPIO_Port, STATUS_LED_Pin, GPIO_PIN_SET);
-	  // HAL_Delay(200);
-	  // HAL_GPIO_WritePin(STATUS_LED_GPIO_Port, STATUS_LED_Pin, GPIO_PIN_RESET);
-	  // HAL_Delay(200);
+    switch (g_mode)
+    {
+      case MODE_MASTER:
+        // 마스터 모드 동작
+        // STATUS LED 0.5초 ON, 0.5초 OFF
+        HAL_GPIO_WritePin(STATUS_LED_GPIO_Port, STATUS_LED_Pin, GPIO_PIN_SET);  // LED ON
+        HAL_Delay(500);  // 0.5초 대기
+        HAL_GPIO_WritePin(STATUS_LED_GPIO_Port, STATUS_LED_Pin, GPIO_PIN_RESET); // LED OFF
+        HAL_Delay(500);  // 0.5초 대기
+        break;
+      
+      case MODE_SLAVE:
+        break; // 슬레이브 모드 동작
 
-    // // Dip1 스위치 상태 읽기
-    // GPIO_PinState dip_1_state = HAL_GPIO_ReadPin(DIP_1_GPIO_Port, DIP_1_Pin);
-    // if (dip_1_state == GPIO_PIN_SET)
-    // {
-    //   // Dip1 스위치가 눌렸을 때
-    //   HAL_GPIO_WritePin(STATUS_LED_GPIO_Port, STATUS_LED_Pin, GPIO_PIN_SET); // LED 켜기
-    // }
-    // else
-    // {
-    //   // Dip1 스위치가 눌리지 않았을 때
-    //   HAL_GPIO_WritePin(STATUS_LED_GPIO_Port, STATUS_LED_Pin, GPIO_PIN_RESET); // LED 끄기
-    // }
+      case MODE_AP:
+        break;
+
+      case MODE_UNKNOWN:
+        break;
+
+      default:
+        break;
+        
+
+    }
+
+
 
 
     /* USER CODE END WHILE */
@@ -720,32 +754,33 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
       /* 2) 문자열로 포맷 */
       char buf[64];
-      // int len = snprintf(buf, sizeof(buf), "ALIVE: %02d:%02d:%02d %02d/%02d/%04d\n",
-      //                   sTime.Hours, sTime.Minutes, sTime.Seconds,
-      //                   sDate.Date, sDate.Month, 2000 + sDate.Year);
 
       int len = snprintf(buf, sizeof(buf), "ALIVE: %02d.%02d / %02d:%02d:%02d\n",
                         g_Date.Month,g_Date.Date, g_Time.Hours, g_Time.Minutes, g_Time.Seconds);
 
       // 생존 메시지 전송
       //HAL_UART_Transmit_IT(&huart1, txAlive, sizeof(txAlive) - 1);
-      //HAL_UART_Transmit_IT(&huart2, txAlive, sizeof(txAlive) - 1);
-      //HAL_UART_Transmit_IT(&huart3, txAlive, sizeof(txAlive) - 1);
 
       /* 3) UART로 생존 및 시간 전송 */
       // UART1로 현재 시간 전송
-      HAL_UART_Transmit_IT(&huart1, (uint8_t *)buf, len);
+      /////////HAL_UART_Transmit_IT(&huart1, (uint8_t *)buf, len);
+
+      // if (HAL_UART_Transmit_IT(&huart2, atCmd, sizeof(atCmd) - 1) != HAL_OK)
+      // {
+      //   // AT 명령 전송 실패 처리
+      //   Error_Handler();
+      // }
     }
   }
 }
 
 // =======================================================================================================
-//    _    _           _____  _______      __
-//   | |  | |   /\    |  __ \|__   __|    /_ |
-//   | |  | |  /  \   | |__) |  | | ______ | |
-//   | |  | | / /\ \  |  _  /   | ||______|| |
-//   | |__| |/ ____ \ | | \ \   | |        | |
-//    \____//_/    \_\|_|  \_\  |_|        |_|
+//    _    _           _____  _______  
+//   | |  | |   /\    |  __ \|__   __|  
+//   | |  | |  /  \   | |__) |  | | 
+//   | |  | | / /\ \  |  _  /   | |
+//   | |__| |/ ____ \ | | \ \   | | 
+//    \____//_/    \_\|_|  \_\  |_| 
 //
 //
 // =======================================================================================================
@@ -753,6 +788,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 /* UART Rx Complete 콜백 */
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 {
+  // uart1에서 수신된 바이트를 처리
   if (huart->Instance == USART1)
   {
     // 1) 에코: 받은 바이트를 바로 송신
@@ -761,6 +797,80 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
     // 2) 다시 수신 대기
     HAL_UART_Receive_IT(&huart1, &rxByte, 1);
   }
+
+  // uart2에서 수신된 바이트를 처리
+
+  if (huart->Instance == USART2)
+  {
+    char c = g_atRxByte;
+
+    // 1) 수신 바이트를 라인 버퍼에 저장
+    if (atIdx < AT_RX_BUF_SIZE-1)
+    {
+      atLineBuf[atIdx++] = c;
+    }
+
+    // 2) '\n' 이 들어오면 한 줄 완성
+    if (c == '\n' || c == '\r')
+    {
+      atLineBuf[atIdx] = '\0';  // 문자열 종료
+
+      // AT 명령어 처리 로직 (예: AT 명령어 파싱 및 응답)
+      // 여기서 atLineBuf를 사용하여 AT 명령어를 처리
+      // 받은 명령을 다시 STM uart 송신
+      HAL_UART_Transmit_IT(&huart1, (uint8_t *)atLineBuf, atIdx);
+
+      atIdx = 0;  // 인덱스 초기화
+    }
+
+    // 2) 다시 수신 대기
+    HAL_UART_Receive_IT(&huart2, &g_atRxByte, 1);
+  }
+
+#if 0
+  if (huart->Instance == USART2)
+    {
+        char c = g_atRxByte;
+
+        // CR(\r)은 무시, LF(\n)으로만 라인 완성 체크
+        if (c != '\r')
+        {
+            if (c == '\n')
+            {
+                atLineBuf[atIdx] = '\0';  // 문자열 종료
+
+                // 1) 에코(AT… 명령어)인지 체크
+                if (skipEcho && strcmp(atLineBuf, lastCmdBuf) == 0)
+                {
+                    // 에코이므로 무시
+                    skipEcho = 0;
+                }
+                else
+                {
+                    // 실제 응답 또는 URC → PC로 전송
+                    HAL_UART_Transmit_IT(&huart1,
+                                         (uint8_t *)atLineBuf,
+                                         strlen(atLineBuf));
+                    // 필요하면 줄바꿈도 함께
+                    HAL_UART_Transmit_IT(&huart1,
+                                         (uint8_t *)"\r\n", 2);
+                }
+
+                atIdx = 0;  // 다음 라인용 버퍼 인덱스 초기화
+            }
+            else
+            {
+                // 일반 문자면 버퍼에 저장
+                if (atIdx < AT_RX_BUF_SIZE - 1)
+                    atLineBuf[atIdx++] = c;
+            }
+        }
+
+        // 2) 다시 UART2 수신 대기
+        HAL_UART_Receive_IT(&huart2, &g_atRxByte, 1);
+    }
+#endif
+
 }
 
 /* UART 전송 완료 콜백 (필요 시..) */
@@ -768,6 +878,9 @@ void HAL_UART_TxCpltCallback(UART_HandleTypeDef *huart)
 {
   // 전송 완료 후 다른 처리가 필요하면 여기에…
 }
+
+
+
 
 // ================================================================================
 // ================================================================================
