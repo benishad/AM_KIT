@@ -33,10 +33,19 @@ extern "C" {
 /* USER CODE BEGIN Includes */
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
+#include <ctype.h>
 
 #include "sd_card.h"
 #include "esp32_at.h"
 #include "server_api.h"
+#include "real_time.h"
+#include "device.h"
+#include "backup.h"
+#include "operate.h"
+#include "main_proc.h"
+#include "led.h"
+#include "web_page.h"
 
 /* USER CODE END Includes */
 
@@ -47,6 +56,12 @@ extern UART_HandleTypeDef huart1;
 extern UART_HandleTypeDef huart2;
 extern UART_HandleTypeDef huart3;
 
+extern SPI_HandleTypeDef hspi1;
+
+extern RTC_HandleTypeDef hrtc;
+
+extern RTC_TimeTypeDef g_Time;                             // RTC 시간 구조체
+extern RTC_DateTypeDef g_Date;                             // RTC 날짜 구조체
 
 
 /* USER CODE END ET */
@@ -73,10 +88,16 @@ void Error_Handler(void);
 #define DIP_3_GPIO_Port GPIOE
 #define DIP_4_Pin GPIO_PIN_3
 #define DIP_4_GPIO_Port GPIOE
+#define ESP_2_TX_Pin GPIO_PIN_0
+#define ESP_2_TX_GPIO_Port GPIOA
+#define ESP_2_RX_Pin GPIO_PIN_1
+#define ESP_2_RX_GPIO_Port GPIOA
 #define ESP_TX_Pin GPIO_PIN_2
 #define ESP_TX_GPIO_Port GPIOA
 #define ESP_RX_Pin GPIO_PIN_3
 #define ESP_RX_GPIO_Port GPIOA
+#define SPI_CS_Pin GPIO_PIN_4
+#define SPI_CS_GPIO_Port GPIOA
 #define RX_LED_Pin GPIO_PIN_8
 #define RX_LED_GPIO_Port GPIOE
 #define TX_LED_Pin GPIO_PIN_9
@@ -126,17 +147,35 @@ void Error_Handler(void);
 #endif
 
 
-// 기기 상태 모드
-enum DeviceMode {
-    MODE_MASTER = 0,          // 마스터 모드
-    MODE_SLAVE,               // 슬레이브 모드
-    MODE_AP,                  // AP 모드
-    MODE_ERROR,               // 에러 모드
-    MODE_MAINTENANCE,          // 유지보수 모드
-    MODE_UNKNOWN              // 알 수 없는 모드
-  
-};
+#define DEBUG_MODE    0 // 디버그 모드 활성화 (0: 비활성화, 1: 활성화)
 
+
+
+
+
+
+// // 기기 상태 모드
+// enum DeviceMode 
+// {
+//   MODE_MASTER = 0,          // 마스터 모드
+//   MODE_SLAVE,               // 슬레이브 모드
+//   MODE_AP,                  // AP 모드
+//   MODE_ERROR,               // 에러 모드
+//   MODE_MAINTENANCE,          // 유지보수 모드
+//   MODE_UNKNOWN,              // 알 수 없는 모드
+//   MODE_DEGUG
+  
+// };
+
+
+
+
+// extern uint8_t g_nBoot_Status;                          // 부팅 단계 (0: 초기화, 1: RTC 설정, 2: WiFi 설정 등)
+// extern uint8_t g_nMode;                                 // 현재 모드 (0: 마스터, 1: 슬레이브, 2: AP 등)
+// extern uint8_t g_nTime_Status;                          // 시간 동기화 상태 (0: 동
+// extern uint8_t g_nWifi_Status;                          // WiFi 연결 상태 (0: 연결 안됨, 1: 연결 됨)
+// extern uint8_t g_nToken_Status;                         // 토큰 상태 (0: 토큰 없음, 1: 토큰 있음)
+// extern uint8_t g_nMac_Status;                           // MAC 주소 상태 (0: MAC 주소 없음, 1: MAC 주소 있음)
 
 
 /* USER CODE END Private defines */

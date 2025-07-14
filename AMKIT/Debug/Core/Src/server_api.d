@@ -32,7 +32,10 @@ Core/Src/server_api.o: ../Core/Src/server_api.c ../Core/Inc/server_api.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim_ex.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h \
- ../Core/Inc/sd_card.h ../Core/Inc/esp32_at.h ../Core/Inc/server_api.h
+ ../Core/Inc/sd_card.h ../Core/Inc/esp32_at.h ../Core/Inc/server_api.h \
+ ../Core/Inc/real_time.h ../Core/Inc/device.h ../Core/Inc/backup.h \
+ ../Core/Inc/operate.h ../Core/Inc/main_proc.h ../Core/Inc/led.h \
+ ../Core/Inc/web_page.h
 ../Core/Inc/server_api.h:
 ../Core/Inc/main.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h:
@@ -71,3 +74,10 @@ Core/Src/server_api.o: ../Core/Src/server_api.c ../Core/Inc/server_api.h \
 ../Core/Inc/sd_card.h:
 ../Core/Inc/esp32_at.h:
 ../Core/Inc/server_api.h:
+../Core/Inc/real_time.h:
+../Core/Inc/device.h:
+../Core/Inc/backup.h:
+../Core/Inc/operate.h:
+../Core/Inc/main_proc.h:
+../Core/Inc/led.h:
+../Core/Inc/web_page.h:

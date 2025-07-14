@@ -1,0 +1,16 @@
+../Core/Src/real_time.c:19:5:Month_String_To_Number	13
+../Core/Src/real_time.c:39:5:DayOfWeek_String_To_Number	8
+../Core/Src/real_time.c:53:5:RTC_Set_UTC	4
+../Core/Src/real_time.c:101:13:RTC_Get_Synced_Year_String	1
+../Core/Src/real_time.c:113:13:UTC_Get_Synced_Year_String	1
+../Core/Src/real_time.c:124:13:RTC_Get_Synced_Month_String	1
+../Core/Src/real_time.c:135:13:UTC_Get_Synced_Month_String	1
+../Core/Src/real_time.c:145:13:RTC_Get_Synced_Date_String	1
+../Core/Src/real_time.c:156:13:UTC_Get_Synced_Date_String	1
+../Core/Src/real_time.c:166:13:RTC_Get_Synced_Hour_String	1
+../Core/Src/real_time.c:177:13:UTC_Get_Synced_Hour_String	1
+../Core/Src/real_time.c:187:13:RTC_Get_Synced_Minute_String	1
+../Core/Src/real_time.c:198:13:UTC_Get_Synced_Minute_String	1
+../Core/Src/real_time.c:208:13:RTC_Get_Synced_Second_String	1
+../Core/Src/real_time.c:219:13:UTC_Get_Synced_Second_String	1
+../Core/Src/real_time.c:231:13:RTC_Get_Synced_Time_String	1

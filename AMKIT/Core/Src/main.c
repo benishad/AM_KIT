@@ -57,36 +57,43 @@ SPI_HandleTypeDef hspi1;
 
 TIM_HandleTypeDef htim7;
 
+UART_HandleTypeDef huart4;
 UART_HandleTypeDef huart1;
 UART_HandleTypeDef huart2;
 UART_HandleTypeDef huart3;
 
 /* USER CODE BEGIN PV */
 
-
-// 전역 변수 선언
-static uint16_t ms_tick_1       = 0;                // 1 ms 카운터
-
-
-// STM UART 변수 선언
-static uint16_t alive_counter   = 0;                // 10 s 생존 메시지 카운터
-uint8_t txBuf[]                 = "Hello from STM32 IRQ!\r\n";
-uint8_t rxByte;                                     // 1 바이트 UART RX 버퍼
-uint8_t txAlive[]               = "ALIVE\n";        // 10 s 마다 보낼 메시지
+#if 0
+// // 전역 변수 선언
+// static uint16_t ms_tick_1       = 0;                // 1 ms 카운터
 
 
-// ESP32 AT 명령어를 위한 변수 선언
-uint8_t atCmd[]                 = "AT+GMR\r\n";
-// uint8_t g_atRxByte;                                 // 1바이트씩 받기              / 외부 선언 해줬음
-// static char  atLineBuf[AT_RX_BUF_SIZE];             // AT 명령어 수신 버퍼         / 외부 선언 해줬음
-// static uint8_t atIdx            = 0;                // AT 명령어 수신 인덱스       / 외부 선언 해줬음
+// // STM UART 변수 선언
+// static uint16_t alive_counter   = 0;                // 10 s 생존 메시지 카운터
+// uint8_t txBuf[]                 = "Hello from STM32 IRQ!\r\n";
+// uint8_t rxByte;                                     // 1 바이트 UART RX 버퍼
+// uint8_t txAlive[]               = "ALIVE\n";        // 10 s 마다 보낼 메시지
 
+
+// // ESP32 AT 명령어를 위한 변수 선언
+// uint8_t atCmd[]                 = "AT+GMR\r\n";
+// // uint8_t g_atRxByte;                                 // 1바이트씩 받기              / 외부 선언 해줬음
+// // static char  atLineBuf[AT_RX_BUF_SIZE];             // AT 명령어 수신 버퍼         / 외부 선언 해줬음
+// // static uint8_t atIdx            = 0;                // AT 명령어 수신 인덱스       / 외부 선언 해줬음
+
+// // 모드 변수
+// uint8_t g_nBoot_Status = BOOT_IN_PROGRESS;            // 부팅 상태 (0: 부팅 성공, 1: 부팅 중, 2: 부팅 실패 등)
+// uint8_t g_nMode = 0;                                  // 현재 모드 (0: 마스터, 1: 슬레이브, 2: AP 등)
+// uint8_t g_nWifi_Status = DEVICE_WIFI_DISCONNECTED;    // WiFi 연결 상태 (0: 연결 안됨, 1: 연결 됨)
+// uint8_t g_nTime_Status = DEVICE_TIME_NOT_SYNCED;      // 시간 동기화 상태 (0: 동기화 안됨, 1: 동기화 됨)
+// uint8_t g_nToken_Status = DEVICE_TOKEN_NOT_SET;       // 토큰 상태 (0: 토큰 없음, 1: 토큰 있음)
+
+#endif
 // RTC 변수 선언
 RTC_TimeTypeDef g_Time;                             // RTC 시간 구조체
 RTC_DateTypeDef g_Date;                             // RTC 날짜 구조체
 
-// 모드 변수
-uint8_t g_mode = 0;                                 // 현재 모드 (0: 마스터, 1: 슬레이브, 2: AP 등)
 
 /* USER CODE END PV */
 
@@ -100,6 +107,7 @@ static void MX_TIM7_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_USART2_UART_Init(void);
 static void MX_USART3_UART_Init(void);
+static void MX_UART4_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -125,7 +133,6 @@ int main(void)
 	//   | |\/| |  / /\ \    | |  | . ` |
 	//   | |  | | / ____ \  _| |_ | |\  |
 	//   |_|  |_|/_/    \_\|_____||_| \_|
-	//
 	//
 	// =======================================================================================================
 
@@ -157,7 +164,15 @@ int main(void)
   MX_USART2_UART_Init();
   MX_USART3_UART_Init();
   MX_FATFS_Init();
+  MX_UART4_Init();
   /* USER CODE BEGIN 2 */
+
+  // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+  // CCM 영역 초기화
+
+  Oper_CCM_Init();
+  
+  // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
   // 타이머 인터럽트 모드로 시작 (TIM7은 이미 PSC/ARR로 1 kHz, 1 ms 인터럽트로 설정되어 있다고 가정)
   if (HAL_TIM_Base_Start_IT(&htim7) != HAL_OK)
@@ -172,6 +187,13 @@ int main(void)
     Error_Handler();
   }
 
+  // SIM uart 콜백 기반 수신 시작
+  if (HAL_UART_Receive_IT(&huart3, &rxSIMByte, 1) != HAL_OK)
+  {
+    // SIM 수신 시작 실패 처리
+    Error_Handler();
+  }
+
   // 2) 와이파이 설정 이후에 UART2 인터럽트 활성화 (1바이트씩)
   // if (HAL_UART_Receive_IT(&huart2, &g_atRxByte, 1) != HAL_OK)
   // {
@@ -179,67 +201,83 @@ int main(void)
   //   Error_Handler();
   // }
 
-
   // ──────────────────────────────────────────────────────────────────────────────
 
-  SD_Card_Boot(); // SD 카드 초기화 및 테스트 / 와이파이 파일 확인
-
-  // SD카드 로그 기록
-  SD_Card_Log("STM32 Booted Successfully!\n");
+  // CCM은 아니지만 기본 초기화
+  Oper_Init();
 
   // ──────────────────────────────────────────────────────────────────────────────
-
-  // ESP_AT_Boot(); // ESP32 AT 명령어 초기화 및 버전 조회
-  ESP_AT_Boot_5();
-
-  // ESP32 AT 명령어를 통해 펌웨어 버전 조회
-  ESP_AT_Send_Command_Sync("AT+GMR\r\n");
-
-  // ESP32 AT 명령어를 통해 현재 WiFi 모드 조회
-  ESP_AT_Send_Command_Sync("AT+CWMODE?\r\n");
-
-  // ESP32 AT 명령어를 통해 WiFi 모드 설정
-  ESP_AT_Send_Command_Sync("AT+CWMODE=1\r\n");
-
-  // 연결 가능한 WiFi AP 목록 조회
-  ESP_AT_Send_Command_Sync("AT+CWLAP\r\n");
   
-  // 와이파이는 2.4GHz 대역만 지원하므로, 5GHz AP는 연결하지 않음, 아니 안테나 없어서 지금까지 에러남 안테나 달아야함
-  // ESP_AT_Send_Command_Sync("AT+CWJAP=\"ANDAMIRO\",\"amazon@@\"\r\n");               // 
+  // 딥스위치 체크
+  Mode_Check(); // AP 모드 체크 및 설정
   
-  // SD카드에서 WiFi SSID와 비밀번호를 읽어와서 연결
-  ESP_AT_Send_WiFi_Config();
-
-  // SNTP 서버 연결 및 시간 동기화
-  ESP_AT_Set_SNTP_Time(AT_SNTP_UTC_OFFSET_KR);
-
   // ──────────────────────────────────────────────────────────────────────────────
-  // 토큰 요청 및 반환
-  ESP_AT_Get_Token();
-  // ESP_AT_Send_Json_test();
 
-  // ESP32 기기 MAC 주소 조회 (기기 고유값)
-  // ESP_AT_Send_Command_Sync_Get_Result("AT+CIPSTAMAC?\r\n");
-  ESP_AT_Get_MAC_Address();
-
-  // SD카드 로그 기록
-  SD_Card_Log("ESP32 AT Firmware Version Retrieved Successfully!\n");
+  Main_System();
 
   // ──────────────────────────────────────────────────────────────────────────────
 
-  // WIFI 연결
-  // ESP_AT_Setup_WiFi();
+  // ──────────────────────────────────────────────────────────────────────────────
+
+  // ──────────────────────────────────────────────────────────────────────────────
+
+  Oper_Boot();
+
+  // AP 모드 인지 확인
+  if (g_nMode != MODE_AP)
+  {
+    // 토큰 값, 모기체 고유 값, 자기체 고유 값 서버로 전송
+    Server_Send_Boot();
+    // Test_Server_Send_Boot(); // 박과장님 서버로 날림
+  }
+
+
+  g_nBoot_Status = BOOT_SUCCESS; // 부팅 성공 상태로 설정
+
+
+  // ESP_AT_Send_Command_Sync("AT+CIPMUX=1\r\n");  // 멀티 커넥션 모드 활성화
+  // ESP_AT_Send_Command_Sync("AT+CIPSERVER=1,80\r\n"); // TCP 서버 시작 (포트 80)
+  
+  
+  
+
+  
+
+  // ──────────────────────────────────────────────────────────────────────────────
 
 
 
-  // dip 스위치 1번 상태 OFF(default) 상태일 때, 마스터 모드로 가정
+  while (1)
+  {
+    Master_Proc(); // 메인 프로세스 실행
+    
+
+  }
+  
+  
+
+  // ──────────────────────────────────────────────────────────────────────────────
+
+
+  // ──────────────────────────────────────────────────────────────────────────────
+
+
+  // ──────────────────────────────────────────────────────────────────────────────
+  
+
+  // ──────────────────────────────────────────────────────────────────────────────
+
+
+
+
+  // dip 스위치 1번 상태 OFF(default) 상태일 때
   if (HAL_GPIO_ReadPin(DIP_1_GPIO_Port, DIP_1_Pin) == GPIO_PIN_RESET)
   {
-    g_mode = MODE_MASTER; // 마스터 모드로 설정
+    g_nMode = MODE_MASTER; // 마스터 모드로 설정
   }
   else
   {
-    g_mode = MODE_SLAVE; // 슬레이브 모드로 설정
+    g_nMode = MODE_SLAVE; // 슬레이브 모드로 설정
   }
   
   /* USER CODE END 2 */
@@ -248,7 +286,14 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    switch (g_mode)
+
+
+
+
+
+
+#if 0
+    switch (g_nMode)
     {
       case MODE_MASTER:
         // 마스터 모드 동작
@@ -270,13 +315,8 @@ int main(void)
 
       default:
         break;
-        
-
     }
-
-
-
-
+#endif
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
@@ -352,12 +392,12 @@ static void MX_RTC_Init(void)
 
   /* USER CODE END RTC_Init 0 */
 
-//  RTC_TimeTypeDef sTime = {0};
-//  RTC_DateTypeDef sDate = {0};
-//  RTC_AlarmTypeDef sAlarm = {0};
+  // RTC_TimeTypeDef sTime = {0};
+  // RTC_DateTypeDef sDate = {0};
+  // RTC_AlarmTypeDef sAlarm = {0};
 
   /* USER CODE BEGIN RTC_Init 1 */
-
+  // 위 3개 구조체 변수는 사용안함, 주석처리
   /* USER CODE END RTC_Init 1 */
 
   /** Initialize RTC Only
@@ -414,49 +454,49 @@ static void MX_RTC_Init(void)
     HAL_RTC_GetDate(&hrtc, &g_Date, RTC_FORMAT_BCD);
   }
 
-
+// 아래 코드 사용안함===============================================================================
   /* USER CODE END Check_RTC_BKUP */
 
   /** Initialize RTC and set the Time and Date
   */
-//  sTime.Hours = 0x0;
-//  sTime.Minutes = 0x0;
-//  sTime.Seconds = 0x0;
-//  sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
-//  sTime.StoreOperation = RTC_STOREOPERATION_RESET;
-//  if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
-//  {
-//    Error_Handler();
-//  }
-//  sDate.WeekDay = RTC_WEEKDAY_MONDAY;
-//  sDate.Month = RTC_MONTH_JANUARY;
-//  sDate.Date = 0x1;
-//  sDate.Year = 0x0;
+  // sTime.Hours = 0x0;
+  // sTime.Minutes = 0x0;
+  // sTime.Seconds = 0x0;
+  // sTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  // sTime.StoreOperation = RTC_STOREOPERATION_RESET;
+  // if (HAL_RTC_SetTime(&hrtc, &sTime, RTC_FORMAT_BCD) != HAL_OK)
+  // {
+  //   Error_Handler();
+  // }
+  // sDate.WeekDay = RTC_WEEKDAY_MONDAY;
+  // sDate.Month = RTC_MONTH_JANUARY;
+  // sDate.Date = 0x1;
+  // sDate.Year = 0x0;
 
-//  if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
-//  {
-//    Error_Handler();
-//  }
+  // if (HAL_RTC_SetDate(&hrtc, &sDate, RTC_FORMAT_BCD) != HAL_OK)
+  // {
+  //   Error_Handler();
+  // }
 
-  /** Enable the Alarm A
-  */
-//  sAlarm.AlarmTime.Hours = 0x0;
-//  sAlarm.AlarmTime.Minutes = 0x0;
-//  sAlarm.AlarmTime.Seconds = 0x0;
-//  sAlarm.AlarmTime.SubSeconds = 0x0;
-//  sAlarm.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
-//  sAlarm.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
-//  sAlarm.AlarmMask = RTC_ALARMMASK_NONE;
-//  sAlarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDMASK_ALL;
-//  sAlarm.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
-//  sAlarm.AlarmDateWeekDay = 0x1;
-//  sAlarm.Alarm = RTC_ALARM_A;
-//  if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BCD) != HAL_OK)
-//  {
-//    Error_Handler();
-//  }
+  // /** Enable the Alarm A
+  // */
+  // sAlarm.AlarmTime.Hours = 0x0;
+  // sAlarm.AlarmTime.Minutes = 0x0;
+  // sAlarm.AlarmTime.Seconds = 0x0;
+  // sAlarm.AlarmTime.SubSeconds = 0x0;
+  // sAlarm.AlarmTime.DayLightSaving = RTC_DAYLIGHTSAVING_NONE;
+  // sAlarm.AlarmTime.StoreOperation = RTC_STOREOPERATION_RESET;
+  // sAlarm.AlarmMask = RTC_ALARMMASK_NONE;
+  // sAlarm.AlarmSubSecondMask = RTC_ALARMSUBSECONDMASK_ALL;
+  // sAlarm.AlarmDateWeekDaySel = RTC_ALARMDATEWEEKDAYSEL_DATE;
+  // sAlarm.AlarmDateWeekDay = 0x1;
+  // sAlarm.Alarm = RTC_ALARM_A;
+  // if (HAL_RTC_SetAlarm_IT(&hrtc, &sAlarm, RTC_FORMAT_BCD) != HAL_OK)
+  // {
+  //   Error_Handler();
+  // }
   /* USER CODE BEGIN RTC_Init 2 */
-
+// 위 코드 사용안함===============================================================================
   /* USER CODE END RTC_Init 2 */
 
 }
@@ -562,6 +602,39 @@ static void MX_TIM7_Init(void)
   /* USER CODE BEGIN TIM7_Init 2 */
 
   /* USER CODE END TIM7_Init 2 */
+
+}
+
+/**
+  * @brief UART4 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_UART4_Init(void)
+{
+
+  /* USER CODE BEGIN UART4_Init 0 */
+
+  /* USER CODE END UART4_Init 0 */
+
+  /* USER CODE BEGIN UART4_Init 1 */
+
+  /* USER CODE END UART4_Init 1 */
+  huart4.Instance = UART4;
+  huart4.Init.BaudRate = 115200;
+  huart4.Init.WordLength = UART_WORDLENGTH_8B;
+  huart4.Init.StopBits = UART_STOPBITS_1;
+  huart4.Init.Parity = UART_PARITY_NONE;
+  huart4.Init.Mode = UART_MODE_TX_RX;
+  huart4.Init.HwFlowCtl = UART_HWCONTROL_NONE;
+  huart4.Init.OverSampling = UART_OVERSAMPLING_16;
+  if (HAL_UART_Init(&huart4) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN UART4_Init 2 */
+
+  /* USER CODE END UART4_Init 2 */
 
 }
 
@@ -684,14 +757,24 @@ static void MX_GPIO_Init(void)
   __HAL_RCC_GPIOD_CLK_ENABLE();
 
   /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(SPI_CS_GPIO_Port, SPI_CS_Pin, GPIO_PIN_RESET);
+
+  /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOE, RX_LED_Pin|TX_LED_Pin|STATUS_LED_Pin|M_PWR_KEY_Pin
                           |ESP_EN_Pin|USIM_RESET_Pin|GPIO_PIN_14|GPIO_PIN_15, GPIO_PIN_RESET);
 
   /*Configure GPIO pins : DIP_3_Pin DIP_4_Pin DIP_1_Pin DIP_2_Pin */
   GPIO_InitStruct.Pin = DIP_3_Pin|DIP_4_Pin|DIP_1_Pin|DIP_2_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Pull = GPIO_PULLUP;
   HAL_GPIO_Init(GPIOE, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : SPI_CS_Pin */
+  GPIO_InitStruct.Pin = SPI_CS_Pin;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(SPI_CS_GPIO_Port, &GPIO_InitStruct);
 
   /*Configure GPIO pins : RX_LED_Pin TX_LED_Pin STATUS_LED_Pin M_PWR_KEY_Pin
                            ESP_EN_Pin USIM_RESET_Pin PE14 PE15 */
@@ -733,8 +816,11 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
   if (htim->Instance == TIM7)
   {
+    Timer_Interrupt_Proc();
+#if 0
     ms_tick_1++;
     alive_counter++;
+    g_nBoot_Tick++; // 부팅 타이머 증가
 
     if (ms_tick_1 >= 200)         // 200 ms 경과 체크
     {
@@ -742,7 +828,7 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
       // HAL_GPIO_TogglePin(STATUS_LED_GPIO_Port, STATUS_LED_Pin);
     }
 
-    if (alive_counter >= 5000)    // 10 s 경과 체크
+    if (g_nBoot_Status == BOOT_SUCCESS && alive_counter >= 5000)    // 10 s 경과 체크
     {
       alive_counter = 0;
 
@@ -763,14 +849,15 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 
       /* 3) UART로 생존 및 시간 전송 */
       // UART1로 현재 시간 전송
-      /////////HAL_UART_Transmit_IT(&huart1, (uint8_t *)buf, len);
+      HAL_UART_Transmit_IT(&huart1, (uint8_t *)buf, len);
 
       // if (HAL_UART_Transmit_IT(&huart2, atCmd, sizeof(atCmd) - 1) != HAL_OK)
       // {
       //   // AT 명령 전송 실패 처리
       //   Error_Handler();
-      // }
+      // }      
     }
+#endif
   }
 }
 
@@ -825,6 +912,17 @@ void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart)
 
     // 2) 다시 수신 대기
     HAL_UART_Receive_IT(&huart2, &g_atRxByte, 1);
+  }
+
+  // uart3에서 수신된 바이트를 처리
+  if (huart->Instance == USART3)
+  {
+    // SIM 카드에서 수신된 바이트를 처리
+    // 예: SIM 카드 응답을 UART1로 전달
+    HAL_UART_Transmit_IT(&huart1, &rxSIMByte, 1);
+
+    // 다시 수신 대기
+    HAL_UART_Receive_IT(&huart3, &rxSIMByte, 1);
   }
 
 #if 0

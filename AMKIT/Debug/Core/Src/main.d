@@ -33,7 +33,10 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_tim_ex.h \
  ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal_uart.h \
  ../Core/Inc/sd_card.h ../Core/Inc/esp32_at.h ../Core/Inc/server_api.h \
- ../FATFS/App/fatfs.h ../Middlewares/Third_Party/FatFs/src/ff.h \
+ ../Core/Inc/real_time.h ../Core/Inc/device.h ../Core/Inc/backup.h \
+ ../Core/Inc/operate.h ../Core/Inc/main_proc.h ../Core/Inc/led.h \
+ ../Core/Inc/web_page.h ../FATFS/App/fatfs.h \
+ ../Middlewares/Third_Party/FatFs/src/ff.h \
  ../Middlewares/Third_Party/FatFs/src/integer.h ../FATFS/Target/ffconf.h \
  ../FATFS/Target/bsp_driver_sd.h \
  ../Middlewares/Third_Party/FatFs/src/ff_gen_drv.h \
@@ -76,6 +79,13 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
 ../Core/Inc/sd_card.h:
 ../Core/Inc/esp32_at.h:
 ../Core/Inc/server_api.h:
+../Core/Inc/real_time.h:
+../Core/Inc/device.h:
+../Core/Inc/backup.h:
+../Core/Inc/operate.h:
+../Core/Inc/main_proc.h:
+../Core/Inc/led.h:
+../Core/Inc/web_page.h:
 ../FATFS/App/fatfs.h:
 ../Middlewares/Third_Party/FatFs/src/ff.h:
 ../Middlewares/Third_Party/FatFs/src/integer.h:

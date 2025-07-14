@@ -4,6 +4,9 @@
         "string.h": "c",
         "stm32f4xx_hal.h": "c",
         "stm32f4xx_hal_conf.h": "c",
-        "main.h": "c"
+        "main.h": "c",
+        "stdio.h": "c",
+        "stdlib.h": "c",
+        "stddef.h": "c"
     }
 }

@@ -2,7 +2,7 @@
  * esp32_at.h
  *
  *  Created on: Jun 18, 2025
- *      Author: PROGRAM
+ *      Author: DONGYOONLEE
  */
 
 #ifndef INC_ESP32_AT_H_
@@ -26,6 +26,23 @@
 #define AT_SNTP_UTC_OFFSET_CHN      800             // UTC+8 (CHINA) 시간대 오프셋
 #define AT_SNTP_UTC_OFFSET_NZ       1200            // UTC+12 (NEW ZEALAND) 시간대 오프셋
 
+#define AT_SNTP_UTC_OFFSET      AT_SNTP_UTC_OFFSET_KR
+
+// 시간 관련 구조체
+typedef struct tag_AT_UTC_Time
+{
+    int sYear;          // 연도 (예: 2025)
+    int sMonth;         // 월 숫자 (1~12)
+    int sDay;           // 일 (1~31)
+
+    int sDayOfWeek;     // 요일 숫자 (0~6, 0=Sun, 1=Mon, ..., 6=Sat)
+
+    int sHour;           // 시 (0~23)
+    int sMinute;         // 분 (0~59)
+    int sSecond;         // 초 (0~59)
+} AT_UTC_Time, *PAT_UTC_Time;
+
+PAT_UTC_Time AT_Get_UTC_Time(void);
 
 
 // g_atRxByte extern
@@ -43,25 +60,50 @@ extern char atLineBuf[AT_RX_BUF_SIZE];
 // lastCmdBuf extern
 extern char lastCmdBuf[AT_RX_BUF_SIZE];
 
+// ==========================================================
 
-void ESP_AT_Boot(void);
+enum ESP_AT_Status
+{
+    AT_OK = 0,                // AT 명령어 성공
+    AT_ERROR,                 // AT 명령어 오류
+};
+
+
+// ==========================================================
+
+// CCMRAM 초기화
+void UTC_Time_Init(void);
+
+// ===========================================================
+
+void ESP_AT_Boot_6(void);
 void ESP_AT_Boot_2(void);
 void ESP_AT_Boot_3(void);
 void ESP_AT_Boot_4(void);
 void ESP_AT_Boot_5(void);
+int ESP_AT_Boot(void);
+
+int ESP_AT_Get_Firmware_Version(void);
 
 int ESP_AT_Send_WiFi_Config(void);
 
 void ESP_AT_Send_Command(const char* cmd);
-void ESP_AT_Setup_WiFi(void);
 
 void ESP_AT_Send_Command_Async(const char* cmd);
 void ESP_AT_Send_Command_Sync(const char* cmd);
 void ESP_AT_Send_Command_IT(const char* cmd);
 
-void ESP_AT_Get_Token(void);
-void ESP_AT_Get_MAC_Address(void);
+const char* ESP_AT_Send_Command_Sync_Get_Result(const char* cmd);
 
-void ESP_AT_Set_SNTP_Time(int utcOffset);
+const char* ESP_AT_Get_Token(void);
+
+const char* ESP_AT_Get_MAC_Address(void);
+
+int ESP_AT_Set_SNTP_Time(int utcOffset);
+
+void ESP_AT_Server_Init(void);
+void ESP_AP_Server(void);
+
+void Handle_IPD_and_Respond(void);
 
 #endif /* INC_ESP32_AT_H_ */

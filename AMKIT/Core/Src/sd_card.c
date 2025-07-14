@@ -2,7 +2,7 @@
  * sd_card.c
  *
  *  Created on: Jun 17, 2025
- *      Author: PROGRAM
+ *      Author: DONGYOONLEE
  */
 
 #include "sd_card.h"
@@ -13,15 +13,17 @@
 
 
 // =========================================================
-void SD_Card_Boot(void)
+int SD_Card_Boot(void)
 {
     FATFS SDFatFS;  // FATFS 구조체
     FIL SDFile;     // 파일 구조체
     FRESULT fres;   // FATFS 함수 결과
     UINT bw, br;    // 바이트 쓰기/읽기 변수
 
-    // --------------------------------------------------
+    int result = 0; // 결과 변수 초기화
 
+    // --------------------------------------------------
+#if 0
     // 1) SD 카드 마운트
     fres = f_mount(&SDFatFS, SDPath, 1); // SDPath는 "0:"으로 설정되어 있어야 함
     if (fres != FR_OK)
@@ -84,7 +86,7 @@ void SD_Card_Boot(void)
         // 언마운트 실패 처리
         Error_Handler();
     }
-
+#endif // 0
     // --------------------------------------------------
 
     // 1) SD 카드 마운트
@@ -104,10 +106,15 @@ void SD_Card_Boot(void)
         fres = f_mount(NULL, SDPath, 1); // SDPath는 "0:"으로 설정되어 있어야 함 마운트 0, 언마운트 1
         if (fres != FR_OK)
         {
+            SD_Card_Log("SD Card Unmount Failed!\n");
             // 언마운트 실패 처리
-            Error_Handler();
-        }
+            // Error_Handler();
+            Error_Proc(1);
 
+            result = SD_ERROR;
+        }
+        
+        result = SD_OK; // 파일이 존재하면 OK
     }
     else
     {
@@ -116,7 +123,10 @@ void SD_Card_Boot(void)
         if (fres != FR_OK)
         {
             // 파일 열기 실패 처리
-            Error_Handler();
+            // Error_Handler();
+            Error_Proc(1);
+            SD_Card_Log("SD Card File Open Failed!\n");
+            result = SD_ERROR;
         }
         // 파일에 기본 Wi-Fi 설정 데이터 쓰기
         const char *wifiData = "SSID=YourSSID\nPassword=YourPassword\n";
@@ -125,16 +135,26 @@ void SD_Card_Boot(void)
         {
             // 파일 쓰기 실패 처리
             f_close(&SDFile);
-            Error_Handler();
+            // Error_Handler();
+            Error_Proc(1);
+            SD_Card_Log("SD Card File Write Failed!\n");
+            result = SD_ERROR;
         }
         // 파일 닫기
         fres = f_close(&SDFile);
         if (fres != FR_OK)
         {
             // 파일 닫기 실패 처리
-            Error_Handler();
+            // Error_Handler();
+            Error_Proc(1);
+            SD_Card_Log("SD Card File Close Failed!\n");
+            result = SD_ERROR;
         }
+
+        result = SD_OK; // 파일 생성 성공
     }
+
+    return result; // SD 카드 부팅 결과 반환
 }
 
 
@@ -317,4 +337,24 @@ void SD_Card_Log(const char *logMessage)
         // 언마운트 실패 처리
         Error_Handler();
     }
+}
+
+// SD카드가 있는지 확인하여 반환하는 함수
+int SD_Card_Is_Exist(void)
+{
+    FATFS SDFatFS;  // FATFS 구조체
+    FRESULT fres;   // FATFS 함수 결과
+
+    // --------------------------------------------------
+
+    // 1) SD 카드 마운트 시도
+    fres = f_mount(&SDFatFS, SDPath, 1); // SDPath는 "0:"으로 설정되어 있어야 함
+    if (fres == FR_OK)
+    {
+        // 마운트 성공 시 언마운트 후 OK 반환
+        f_mount(NULL, SDPath, 1); // SDPath는 "0:"으로 설정되어 있어야 함 마운트 0, 언마운트 1
+        return SD_OK; // SD 카드 존재
+    }
+    
+    return SD_ERROR; // SD 카드 없음
 }
