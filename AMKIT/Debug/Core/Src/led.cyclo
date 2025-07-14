@@ -1,0 +1,7 @@
+../Core/Src/led.c:13:6:LED_Init	1
+../Core/Src/led.c:63:6:RX_LED_On	1
+../Core/Src/led.c:69:6:RX_LED_Off	1
+../Core/Src/led.c:75:6:TX_LED_On	1
+../Core/Src/led.c:81:6:TX_LED_Off	1
+../Core/Src/led.c:88:6:STATUS_LED_On	1
+../Core/Src/led.c:95:6:STATUS_LED_Off	1

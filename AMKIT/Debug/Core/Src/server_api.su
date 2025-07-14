@@ -1,0 +1,6 @@
+../Core/Src/server_api.c:14:18:SERVER_API_Get_Data	4	static
+../Core/Src/server_api.c:21:6:SERVER_API_Init	8	static
+../Core/Src/server_api.c:29:6:SERVER_API_Set_Token	16	static
+../Core/Src/server_api.c:39:6:SERVER_API_Set_MAC_Address	16	static
+../Core/Src/server_api.c:56:5:Server_Send_Boot	840	static
+../Core/Src/server_api.c:148:5:Test_Server_Send_Boot	840	static

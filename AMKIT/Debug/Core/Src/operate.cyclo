@@ -1,0 +1,3 @@
+../Core/Src/operate.c:30:6:Oper_CCM_Init	1
+../Core/Src/operate.c:55:6:Oper_Init	1
+../Core/Src/operate.c:88:6:Oper_Boot	25
