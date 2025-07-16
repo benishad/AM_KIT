@@ -50,6 +50,85 @@ const char htmlBody_2[] =
 
 const int htmlBody_2Len = sizeof(htmlBody_2) - 1;
 
+// ──────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+
+const char htmlBody_inline[] =
+  "<!DOCTYPE html><html><head>"
+    "<meta charset=\"utf-8\">"
+    "<title>ESP32 Web Page</title>"
+    "<style>"
+      "body {"
+        "margin: 0; padding: 0;"
+        "font-family: Helvetica, sans-serif;"
+        "background: #f5f5f5; color: #333;"
+        "text-align: center;"
+      "}"
+      "h1 { margin: 40px 0; font-size: 2em; color: #2a7ae2; }"
+      "p { max-width: 600px; margin: 20px auto; line-height: 1.6; }"
+      "button {"
+        "margin: 10px; padding: 12px 24px;"
+        "font-size: 1em; border: none; border-radius: 4px;"
+        "background: #2a7ae2; color: white; cursor: pointer;"
+        "transition: background 0.3s;"
+      "}"
+      "button:hover { background: #1f5cbf; }"
+      "@media (max-width: 480px) {"
+        "h1 { font-size: 1.5em; }"
+        "button { padding: 10px 20px; font-size: 0.9em; }"
+      "}"
+    "</style>"
+  "</head><body>"
+    "<h1>ESP32 Web Page</h1>"
+    "<p>Hello from STM32!</p>"
+    "<button onclick=\"location.reload()\">Reload</button>"
+    "<button onclick=\"window.close()\">QUIT</button>"
+  "</body></html>";
+
+const int htmlBody_inlineLen = sizeof(htmlBody_inline) - 1;
+
+const char htmlBody_inline_2[] =
+  "<!DOCTYPE html><html><head>"
+    "<meta charset=\"utf-8\">"
+    "<title>ESP32 Web Page</title>"
+    "<style>"
+      "body {"
+        "margin: 0; padding: 0;"
+        "font-family: Helvetica, sans-serif;"
+        "background: #f5f5f5; color: #333;"
+        "text-align: center;"
+      "}"
+      "h1 { margin: 40px 0; font-size: 2em; color: #2a7ae2; }"
+      "p { max-width: 600px; margin: 20px auto; line-height: 1.6; }"
+      "button {"
+        "margin: 10px; padding: 12px 24px;"
+        "font-size: 1em; border: none; border-radius: 4px;"
+        "background: #2a7ae2; color: white; cursor: pointer;"
+        "transition: background 0.3s;"
+      "}"
+      "button:hover { background: #1f5cbf; }"
+      "@media (max-width: 480px) {"
+        "h1 { font-size: 1.5em; }"
+        "button { padding: 10px 20px; font-size: 0.9em; }"
+      "}"
+    "</style>"
+    "<script>"
+      "function ledDevice() {"
+        "fetch('/led')"
+          ".then(response => response.text())"
+          ".then(text => console.log(text))"
+          ".catch(err => console.error(err));"
+      "}"
+    "</script>"
+  "</head><body>"
+    "<h1>ESP32 Web Page</h1>"
+    "<p>Hello from STM32!</p>"
+    "<button onclick=\"location.reload()\">Reload</button>"
+    "<button onclick=\"ledDevice()\">LED</button>"
+  "</body></html>";
+
+const int htmlBody_inline_2Len = sizeof(htmlBody_inline_2) - 1;
+
 
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -113,3 +192,7 @@ const char cssStyle[] =
 "}\n";
 
 const int cssStyleLen = sizeof(cssStyle) - 1;
+
+
+
+// ──────────────────────────────────────────────────────────────────────────────

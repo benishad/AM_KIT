@@ -40,7 +40,7 @@ Middlewares/Third_Party/FatFs/src/ff_gen_drv.o: \
  ../Core/Inc/sd_card.h ../Core/Inc/esp32_at.h ../Core/Inc/server_api.h \
  ../Core/Inc/real_time.h ../Core/Inc/device.h ../Core/Inc/backup.h \
  ../Core/Inc/operate.h ../Core/Inc/main_proc.h ../Core/Inc/led.h \
- ../Core/Inc/web_page.h ../FATFS/Target/bsp_driver_sd.h
+ ../Core/Inc/web_page.h ../Core/Inc/sim.h ../FATFS/Target/bsp_driver_sd.h
 ../Middlewares/Third_Party/FatFs/src/ff_gen_drv.h:
 ../Middlewares/Third_Party/FatFs/src/diskio.h:
 ../Middlewares/Third_Party/FatFs/src/integer.h:
@@ -90,4 +90,5 @@ Middlewares/Third_Party/FatFs/src/ff_gen_drv.o: \
 ../Core/Inc/main_proc.h:
 ../Core/Inc/led.h:
 ../Core/Inc/web_page.h:
+../Core/Inc/sim.h:
 ../FATFS/Target/bsp_driver_sd.h:

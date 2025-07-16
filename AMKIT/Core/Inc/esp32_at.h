@@ -93,6 +93,8 @@ void ESP_AT_Send_Command_Async(const char* cmd);
 void ESP_AT_Send_Command_Sync(const char* cmd);
 void ESP_AT_Send_Command_IT(const char* cmd);
 
+int ESP_AT_Send_Command_Sync_Get_int(const char* cmd);
+
 const char* ESP_AT_Send_Command_Sync_Get_Result(const char* cmd);
 
 const char* ESP_AT_Get_Token(void);
@@ -104,6 +106,10 @@ int ESP_AT_Set_SNTP_Time(int utcOffset);
 void ESP_AT_Server_Init(void);
 void ESP_AP_Server(void);
 
-void Handle_IPD_and_Respond(void);
+void Handle_IPD_and_Respond(void);      // 가장 동작 잘하는 HTML 함수
+void Handle_IPD_and_Respond_1(void);
+void Handle_IPD_and_Respond_2(void);    // HTML CSS 함수 - 작동 오류
+void Handle_IPD_and_Respond_3(void);    // HTML에 CSS 스타일을 직접 기입함 - 작동 잘함
+void Handle_IPD_and_Respond_4(void);
 
 #endif /* INC_ESP32_AT_H_ */

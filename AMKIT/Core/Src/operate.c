@@ -59,6 +59,11 @@ void Oper_Init(void)
     g_nBoot_Status = BOOT_IN_PROGRESS; // 부팅 상태를 부팅 중으로 설정
 
     LED_Init(); // LED 초기화
+    SIM_M_PWR_KEY_Init(); // SIM 모듈 초기화
+    // SIM_USIM_RESET_Init(); // SIM 모듈 리셋 핀 초기화
+
+    //SIM_USIM_RESET_Clear(); // SIM 모듈 리셋 핀 초기화
+    // SIM_USIM_RESET_Set(); // SIM 모듈 리셋 핀 설정
 }
 
 

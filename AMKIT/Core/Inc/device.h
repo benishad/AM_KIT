@@ -61,8 +61,9 @@ enum DeviceMode
   MODE_ERROR,               // 에러 모드
   MODE_MAINTENANCE,          // 유지보수 모드
   MODE_UNKNOWN,              // 알 수 없는 모드
-  MODE_DEGUG
-  
+  MODE_DEBUG,                // 디버그 모드
+  MODE_TEST                  // 테스트 모드
+
 };
 
 void DEVICE_Init(void);

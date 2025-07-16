@@ -41,6 +41,8 @@ void Master_Proc(void);
 
 void DEBUG_Proc(void);
 
+void Test_Proc(void);
+
 // 파라미터 0 : Error_Handler 호출
 // 파라미터 !0 : uart1 코맨트 전송
 void Error_Proc(int errorCode);

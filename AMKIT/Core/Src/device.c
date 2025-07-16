@@ -42,8 +42,11 @@ int Device_Mode_Set(int mode)
     case MODE_AP:
         pDeviceControl->g_nMode = MODE_AP; // AP 모드로 설정
         break;
-    case MODE_DEGUG:
-        pDeviceControl->g_nMode = MODE_DEGUG; // 디버그 모드로 설정
+    case MODE_DEBUG:
+        pDeviceControl->g_nMode = MODE_DEBUG; // 디버그 모드로 설정
+        break;
+    case MODE_TEST:
+        pDeviceControl->g_nMode = MODE_TEST; // 테스트 모드로 설정
         break;
     default:
         return -1; // 잘못된 모드 값 처리
@@ -60,6 +63,7 @@ int Device_Mode_Check(void)
 
     int mode = pDeviceControl->g_nMode; // 현재 모드 가져오기
 
+    // 0,0,0,0
     if ((DIP_1_GPIO_Port->IDR & DIP_1_Pin) == DIP_1_Pin && 
         (DIP_2_GPIO_Port->IDR & DIP_2_Pin) == DIP_2_Pin && 
         (DIP_3_GPIO_Port->IDR & DIP_3_Pin) == DIP_3_Pin &&
@@ -72,6 +76,7 @@ int Device_Mode_Check(void)
 
     // 딥스위치 상태 확인 esp32를 AP모드 사용할지 결정
     // 3,4번 DIP 스위치가 모두 HIGH 상태일 때 AP 모드로 설정
+    // 0,0,1,1
     if ((DIP_1_GPIO_Port->IDR & DIP_1_Pin) == DIP_1_Pin && 
         (DIP_2_GPIO_Port->IDR & DIP_2_Pin) == DIP_2_Pin && 
         (DIP_3_GPIO_Port->IDR & DIP_3_Pin) != DIP_3_Pin && 
@@ -92,17 +97,31 @@ int Device_Mode_Check(void)
     }
 
     // 딥스위치 1,3,4 번 HIGH 상태일때 디버그 모드
+    // 1,0,1,1
     if ((DIP_1_GPIO_Port->IDR & DIP_1_Pin) != DIP_1_Pin && 
         (DIP_2_GPIO_Port->IDR & DIP_2_Pin) == DIP_2_Pin && 
         (DIP_3_GPIO_Port->IDR & DIP_3_Pin) != DIP_3_Pin &&
         (DIP_4_GPIO_Port->IDR & DIP_4_Pin) != DIP_4_Pin)
     {
-        mode = Device_Mode_Set(MODE_DEGUG); // 디버그 모드로 설정 및 업데이트
+        mode = Device_Mode_Set(MODE_DEBUG); // 디버그 모드로 설정 및 업데이트
 
-        // pDeviceControl->g_nMode = MODE_DEGUG; // 디버그 모드로 설정
+        // pDeviceControl->g_nMode = MODE_DEBUG; // 디버그 모드로 설정
         // mode = pDeviceControl->g_nMode; // 현재 모드 업데이트
-        
-        // g_nMode = MODE_DEGUG; // 디버그 모드로 설정
+
+        // g_nMode = MODE_DEBUG; // 디버그 모드로 설정
+
+        return mode;
+    }
+
+    // 딥스위치 1,3 번 HIGH 상태일때 테스트 모드
+    // 1,0,1,0
+    if ((DIP_1_GPIO_Port->IDR & DIP_1_Pin) != DIP_1_Pin && 
+        (DIP_2_GPIO_Port->IDR & DIP_2_Pin) == DIP_2_Pin && 
+        (DIP_3_GPIO_Port->IDR & DIP_3_Pin) != DIP_3_Pin &&
+        (DIP_4_GPIO_Port->IDR & DIP_4_Pin) == DIP_4_Pin)
+    {
+        mode = Device_Mode_Set(MODE_TEST); // 테스트 모드로 설정 및 업데이트
+
 
         return mode;
     }

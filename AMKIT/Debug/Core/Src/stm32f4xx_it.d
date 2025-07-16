@@ -35,7 +35,7 @@ Core/Src/stm32f4xx_it.o: ../Core/Src/stm32f4xx_it.c ../Core/Inc/main.h \
  ../Core/Inc/sd_card.h ../Core/Inc/esp32_at.h ../Core/Inc/server_api.h \
  ../Core/Inc/real_time.h ../Core/Inc/device.h ../Core/Inc/backup.h \
  ../Core/Inc/operate.h ../Core/Inc/main_proc.h ../Core/Inc/led.h \
- ../Core/Inc/web_page.h ../Core/Inc/stm32f4xx_it.h
+ ../Core/Inc/web_page.h ../Core/Inc/sim.h ../Core/Inc/stm32f4xx_it.h
 ../Core/Inc/main.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h:
 ../Core/Inc/stm32f4xx_hal_conf.h:
@@ -80,4 +80,5 @@ Core/Src/stm32f4xx_it.o: ../Core/Src/stm32f4xx_it.c ../Core/Inc/main.h \
 ../Core/Inc/main_proc.h:
 ../Core/Inc/led.h:
 ../Core/Inc/web_page.h:
+../Core/Inc/sim.h:
 ../Core/Inc/stm32f4xx_it.h:

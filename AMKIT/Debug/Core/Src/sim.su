@@ -1,0 +1,10 @@
+../Core/Src/sim.c:75:6:SIM_M_PWR_KEY_Init	8	static
+../Core/Src/sim.c:120:6:SIM_PWR_ON	4	static
+../Core/Src/sim.c:126:6:SIM_PWR_OFF	4	static
+../Core/Src/sim.c:132:6:SIM_Toggle_PWR	4	static
+../Core/Src/sim.c:142:6:SIM_USIM_RESET_Init	16	static
+../Core/Src/sim.c:186:6:SIM_USIM_RESET_Set	4	static
+../Core/Src/sim.c:192:6:SIM_USIM_RESET_Clear	4	static
+../Core/Src/sim.c:210:8:SIM_UART_ReadData	40	static
+../Core/Src/sim.c:236:13:SIM_AT_Send_Command_Sync_Get_Result	40	static
+../Core/Src/sim.c:306:5:SIM_AT_WaitReady	40	static

@@ -46,6 +46,7 @@ extern "C" {
 #include "main_proc.h"
 #include "led.h"
 #include "web_page.h"
+#include "sim.h"
 
 /* USER CODE END Includes */
 

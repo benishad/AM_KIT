@@ -1,5 +1,5 @@
 ../Core/Src/device.c:15:17:DEVICE_Get_Control	4	static
 ../Core/Src/device.c:21:6:DEVICE_Init	8	static
 ../Core/Src/device.c:29:5:Device_Mode_Set	24	static
-../Core/Src/device.c:57:5:Device_Mode_Check	16	static
-../Core/Src/device.c:117:6:DEVICE_Set_WiFi_Status	24	static
+../Core/Src/device.c:60:5:Device_Mode_Check	16	static
+../Core/Src/device.c:136:6:DEVICE_Set_WiFi_Status	24	static

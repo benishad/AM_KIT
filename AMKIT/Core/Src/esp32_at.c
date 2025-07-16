@@ -504,6 +504,78 @@ void ESP_AT_Send_Command_Sync(const char* cmd)
     }
 }
 
+// 명령 성공 실패를 AT_OK,AT_ERROR 으로 반환하는 함수
+int ESP_AT_Send_Command_Sync_Get_int(const char* cmd)
+{
+    char    respBuf[RESP_BUF_SIZE] = {0};       // 응답 버퍼
+    size_t  pos   = 0;                          // 현재 응답 버퍼 위치
+    uint8_t ch;                                 // 수신된 바이트
+    uint32_t tick_0   = HAL_GetTick();          // 전체 타이머 시작
+
+    // (1) AT 명령 전송
+    size_t cmdLen = strlen(cmd);
+    if (HAL_UART_Transmit(&huart2, (uint8_t*)cmd, cmdLen, HAL_MAX_DELAY) != HAL_OK)
+    {
+        Error_Handler();
+    }
+
+    // (2) END_MARKER ("\r\nOK\r\n") 까지 수신
+    while (pos < RESP_BUF_SIZE - 1)
+    {
+        if (HAL_UART_Receive(&huart2, &ch, 1, BYTE_RX_TIMEOUT) == HAL_OK)
+        {
+            respBuf[pos++] = (char)ch;          // 수신된 바이트를 버퍼에 저장
+
+            // 슬라이딩 윈도우로 END_MARKER 일치 검사
+            // pos >= END_MARKER_LEN 조건은 END_MARKER 길이만큼의 데이터가 모였는지 확인
+            if (pos >= END_MARKER_LEN && memcmp(&respBuf[pos - END_MARKER_LEN], END_MARKER, END_MARKER_LEN) == 0)
+            {
+                break;
+            }
+            // 에러마커 확인
+            else if (pos >= ERR_MARKER_LEN && memcmp(&respBuf[pos - ERR_MARKER_LEN], ERR_MARKER, ERR_MARKER_LEN) == 0)
+            {
+                // 에러 발생 시 강제 종료
+                // pos = 0;  // 버퍼 초기화
+                break;
+            }
+
+            tick_0 = HAL_GetTick();  // 데이터 수신 시 전체 타이머 리셋
+        }
+        else if (HAL_GetTick() - tick_0 > OVERALL_TIMEOUT)
+        {
+            // 전체 대기 초과 시 강제 종료
+            break;
+        }
+    }
+
+    // (3) OK 이후 추가 URC 등 있을 수 있으니 잠깐 더 대기하며 수신
+    uint32_t tick_1 = HAL_GetTick();
+    while (pos < RESP_BUF_SIZE - 1 && HAL_GetTick() - tick_1 < POST_OK_TIMEOUT)
+    {
+        if (HAL_UART_Receive(&huart2, &ch, 1, BYTE_RX_TIMEOUT) == HAL_OK)
+        {
+            respBuf[pos++] = ch;
+            tick_1 = HAL_GetTick();  // 추가 데이터 수신 시 유예 시간 리셋
+        }
+    }
+    respBuf[pos] = '\0';
+
+    // (4) 한 번에 PC(UART1)로 전송
+    if (pos > 0)
+    {
+        HAL_UART_Transmit(&huart1, (uint8_t*)respBuf, pos, HAL_MAX_DELAY);
+    }
+
+    // 응답 성공 반환
+    if (strstr(respBuf, END_MARKER))
+    {
+        return AT_OK; // 성공
+    }
+
+    return AT_ERROR; // 실패
+}
+
 // 동기방식 ESP32 AT 명령 전송 함수
 // 반환값으로 응답 문자열을 반환
 const char* ESP_AT_Send_Command_Sync_Get_Result(const char* cmd)
@@ -1158,6 +1230,167 @@ void ESP_AP_Server(void)
 
 // ──────────────────────────────────────────────────────────────────────────────
 // ──────────────────────────────────────────────────────────────────────────────
+
+void Handle_IPD_and_Respond(void)
+{
+    uint8_t  ch;
+    char     ipdHdr[IPD_HDR_MAX];
+    char     payload[PAYLOAD_MAX];
+    uint32_t start;
+    uint16_t linkID, dataLen;
+
+    while (1)
+    {
+        int  hdrPos = 0, payPos = 0;
+
+        // — 1) '+IPD' 헤더 수집 (‘:’ 포함)
+        do {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                continue;
+            }
+        } while (ch != '+');
+        ipdHdr[hdrPos++] = '+';
+
+        while (hdrPos < IPD_HDR_MAX-1)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                Error_Handler();
+            }
+            ipdHdr[hdrPos++] = ch;
+            if (ch == ':')
+            {
+                break;
+            }
+        }
+        ipdHdr[hdrPos] = '\0';
+
+        // — 2) linkID, dataLen 파싱
+        if (sscanf(ipdHdr, "+IPD,%hu,%hu:", &linkID, &dataLen) != 2)
+        {
+            continue;
+        }
+
+        // — 3) dataLen 바이트만큼 payload 수집 (CR/LF 포함)
+        for (uint16_t i = 0; i < dataLen && payPos < PAYLOAD_MAX-1; ++i)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                Error_Handler();
+            }
+            payload[payPos++] = ch;
+        }
+        payload[payPos] = '\0';
+
+        // — 4) GET 라인 파싱
+        //    예: "GET /path HTTP/1.1"
+        char method[8], url[128];
+        int isIcon = 0;
+        if (sscanf(payload, "%7s %127s", method, url) == 2)
+        {
+            if (strcmp(url, "/apple-touch-icon-precomposed.png") == 0)
+            {
+                isIcon = 1;
+            }
+        }
+
+        // — 5) 응답 헤더/바디 준비
+        char  respHdr[128];
+        int   hdrLen, bodyLen;
+        if (isIcon)
+        {
+            // 204 No Content
+            const char *hdr204 =
+              "HTTP/1.1 204 No Content\r\n"
+              "Connection: close\r\n"
+              "\r\n";
+            hdrLen  = strlen(hdr204);
+            strncpy(respHdr, hdr204, hdrLen);
+            bodyLen = 0;
+        }
+        else
+        {
+            // 200 OK + HTML
+            // bodyLen = sizeof(htmlBody) - 1;
+            bodyLen = htmlBodyLen;
+            hdrLen  = snprintf(respHdr, sizeof(respHdr),
+              "HTTP/1.1 200 OK\r\n"
+              "Content-Type: text/html\r\n"
+              "Content-Length: %d\r\n"
+              "Connection: close\r\n"
+              "\r\n",
+              bodyLen);
+            if (hdrLen < 0 || hdrLen >= (int)sizeof(respHdr))
+            {
+                Error_Handler();
+            }
+        }
+
+        // — 6) AT+CIPSEND=<linkID>,<hdrLen+bodyLen>
+        int totalLen = hdrLen + bodyLen;
+        char cmd[64];
+        int  cmdLen = snprintf(cmd, sizeof(cmd),
+                        "AT+CIPSEND=%d,%d\r\n",
+                        linkID, totalLen);
+        if (cmdLen < 0 || cmdLen >= (int)sizeof(cmd))
+        {
+            Error_Handler();
+        }
+        HAL_UART_Transmit(&huart2, (uint8_t*)cmd, cmdLen, HAL_MAX_DELAY);
+
+        // — 7) '>' 프롬프트 대기
+        start = HAL_GetTick();
+        do
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT)== HAL_OK
+                && ch == '>')
+            {
+                break;
+            }
+        } while (HAL_GetTick() - start < RX_TIMEOUT);
+
+        // — 8) 헤더 + (icon이면 바디 없음 / 아니면 htmlBody) 전송
+        HAL_UART_Transmit(&huart2, (uint8_t*)respHdr, hdrLen, HAL_MAX_DELAY);
+        if (!isIcon)
+        {
+            HAL_UART_Transmit(&huart2, (uint8_t*)htmlBody, bodyLen, HAL_MAX_DELAY);
+        }
+
+        // — 9) “SEND OK” URC 대기 (최대 SEND_TIMEOUT)
+        start = HAL_GetTick();
+        const char sendOk[] = "SEND OK";
+        int  match = 0;
+        while (HAL_GetTick() - start < SEND_TIMEOUT)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT)== HAL_OK)
+            {
+                if (ch == sendOk[match])
+                {
+                    if (++match == (int)strlen(sendOk))
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    match = 0;
+                }
+            }
+        }
+
+        // — 10) 안전 딜레이 후 연결 종료
+        HAL_Delay(50);
+        cmdLen = snprintf(cmd, sizeof(cmd),
+                         "AT+CIPCLOSE=%d\r\n",
+                         linkID);
+        ESP_AT_Send_Command_Sync_Get_Result(cmd);
+
+        // 다음 요청 대기
+    }
+}
+
+
 // ──────────────────────────────────────────────────────────────────────────────
 // ESP32 AT 서버 함수 및 HTML 바디
 
@@ -1176,7 +1409,7 @@ void ESP_AP_Server(void)
 //     "</body></html>";
 
 // IPD URC를 처리하고 응답을 생성 테스트
-void Handle_IPD_and_Respond(void)
+void Handle_IPD_and_Respond_1(void)
 {
     uint8_t  ch;
     char     ipdHdr[IPD_HDR_MAX];
@@ -1404,5 +1637,641 @@ void Handle_IPD_and_Respond(void)
         ESP_AT_Send_Command_Sync_Get_Result(cmd);
 
         // 다음 요청 대기
+    }
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+
+void Handle_IPD_and_Respond_2(void)
+{
+    uint8_t  ch;
+    char     ipdHdr[IPD_HDR_MAX];
+    char     payload[PAYLOAD_MAX];
+    uint16_t linkID, dataLen;
+    int      hdrPos, payPos;
+    uint32_t start;
+    char     respHdr[128];
+    int      hdrLen, bodyLen;
+    char     cmd[64];
+    int      cmdLen, match;
+
+    while (1)
+    {
+        IPD_START:
+        // — 1) "+IPD" 헤더 수집 ("+IPD,<linkID>,<len>:" 형태)
+        hdrPos = 0;
+        // '+' 문자 대기
+        do {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                // return;
+                goto IPD_START; // 재시도
+            }
+        } while (ch != '+');
+        ipdHdr[hdrPos++] = '+';
+
+        // ':'까지 읽기
+        while (hdrPos < IPD_HDR_MAX - 1)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                // return;
+                goto IPD_START; // 재시도
+            }
+            ipdHdr[hdrPos++] = ch;
+            if (ch == ':')
+            {
+                break;
+            }
+        }
+        ipdHdr[hdrPos] = '\0';
+
+        // -------------------------------------
+
+        // — 2) linkID, dataLen 파싱
+        if (sscanf(ipdHdr, "+IPD,%hu,%hu:", &linkID, &dataLen) != 2)
+        {
+            // return;
+            goto IPD_START; // 재시도
+        }
+
+        // -------------------------------------
+
+        // — 3) payload 읽기 (최대 PAYLOAD_MAX-1 바이트)
+        payPos = 0;
+        for (uint16_t i = 0; i < dataLen; ++i)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                // return;
+                goto IPD_START; // 재시도
+            }
+            if (payPos < PAYLOAD_MAX - 1)
+            {
+                payload[payPos++] = ch;
+            }
+        }
+        payload[payPos] = '\0';
+
+        // -------------------------------------
+
+        // — 4) GET 라인에서 URL 추출
+        //    예: "GET /style.css HTTP/1.1"
+        char method[8] = {0}, url[128] = {0};
+        int  isCss = 0, isIcon = 0;
+        if (sscanf(payload, "%7s %127s", method, url) == 2)
+        {
+            if (strcmp(url, "/style.css") == 0)
+            {
+                isCss = 1;
+            }
+            else if (strcmp(url, "/favicon.ico") == 0 ||
+                    strcmp(url, "/apple-touch-icon-precomposed.png") == 0)
+            {
+                isIcon = 1;
+            }
+        }
+
+        // -------------------------------------
+
+        // — 5) 응답 헤더 + 바디 길이 결정
+        #if 1
+        if (isCss)
+        {
+            bodyLen = cssStyleLen;
+            hdrLen  = snprintf(respHdr, sizeof(respHdr),
+                    "HTTP/1.1 200 OK\r\n"
+                    "Content-Type: text/css\r\n"
+                    "Content-Length: %d\r\n"
+                    "Connection: close\r\n"
+                    "\r\n",
+                    bodyLen);
+        }
+        else if (isIcon)
+        {
+            bodyLen = 0;
+            hdrLen  = snprintf(respHdr, sizeof(respHdr),
+                    "HTTP/1.1 204 No Content\r\n"
+                    "Connection: close\r\n"
+                    "\r\n");
+        }
+        else
+        {
+            bodyLen = htmlBody_2Len;
+            hdrLen  = snprintf(respHdr, sizeof(respHdr),
+                    "HTTP/1.1 200 OK\r\n"
+                    "Content-Type: text/html; charset=utf-8\r\n"
+                    "Content-Length: %d\r\n"
+                    "Connection: close\r\n"
+                    "\r\n",
+                    bodyLen);
+        }
+        if (hdrLen < 0 || hdrLen >= (int)sizeof(respHdr))
+        {
+            // return;
+            goto IPD_START; // 재시도
+        }
+        #else
+        if (isCss)
+        {
+            bodyLen = cssStyleLen;
+            hdrLen  = snprintf(respHdr, sizeof(respHdr),
+                    "HTTP/1.0 200 OK\r\n"
+                    "Content-Type: text/css\r\n"
+                    "Content-Length: %d\r\n"
+                    "Connection: close\r\n"
+                    "\r\n",
+                    bodyLen);
+        }
+        else if (isIcon)
+        {
+            bodyLen = 0;
+            hdrLen  = snprintf(respHdr, sizeof(respHdr),
+                    "HTTP/1.0 204 No Content\r\n"
+                    "Connection: close\r\n"
+                    "\r\n");
+        }
+        else
+        {
+            bodyLen = htmlBody_2Len;
+            hdrLen  = snprintf(respHdr, sizeof(respHdr),
+                    "HTTP/1.0 200 OK\r\n"
+                    "Content-Type: text/html; charset=utf-8\r\n"
+                    "Content-Length: %d\r\n"
+                    "Connection: close\r\n"
+                    "\r\n",
+                    bodyLen);
+        }
+        if (hdrLen < 0 || hdrLen >= (int)sizeof(respHdr))
+        {
+            // header 생성 실패 처리
+            return;
+        }
+        #endif
+
+        // -------------------------------------
+
+        // — 6) AT+CIPSEND=<linkID>,<hdrLen+bodyLen>
+        cmdLen = snprintf(cmd, sizeof(cmd), "AT+CIPSEND=%hu,%d\r\n",
+                        linkID, hdrLen + bodyLen);
+        if (cmdLen < 0 || cmdLen >= (int)sizeof(cmd))
+        {
+            return;
+        }
+
+        HAL_UART_Transmit(&huart2, (uint8_t*)cmd, cmdLen, HAL_MAX_DELAY);
+
+        // -------------------------------------
+
+        // — 7) '>' 프롬프트 대기
+        start = HAL_GetTick();
+        do {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK &&
+                ch == '>')
+            {
+                break;
+            }
+        } while (HAL_GetTick() - start < RX_TIMEOUT);
+
+        // -------------------------------------
+
+        // — 8) 헤더/바디 전송
+        HAL_UART_Transmit(&huart2, (uint8_t*)respHdr, hdrLen, HAL_MAX_DELAY);
+        HAL_UART_Transmit(&huart1, (uint8_t*)respHdr, hdrLen, HAL_MAX_DELAY);
+        if (isCss)
+        {
+            HAL_UART_Transmit(&huart2, (uint8_t*)cssStyle, cssStyleLen, HAL_MAX_DELAY);
+        }
+        else if (!isIcon)
+        {
+            HAL_UART_Transmit(&huart2, (uint8_t*)htmlBody_2, htmlBody_2Len, HAL_MAX_DELAY);
+        }
+
+        // -------------------------------------
+
+        // — 9) "SEND OK" URC 대기
+        const char sendOk[] = "SEND OK";
+        match = 0;
+        start = HAL_GetTick();
+        while (HAL_GetTick() - start < SEND_TIMEOUT)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK)
+            {
+                if (ch == sendOk[match])
+                {
+                    if (++match == (int)strlen(sendOk))
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    match = 0;
+                }
+            }
+        }
+
+        // -------------------------------------
+
+        // — 10) 연결 종료
+        // HAL_Delay(50);
+        cmdLen = snprintf(cmd, sizeof(cmd), "AT+CIPCLOSE=%hu\r\n", linkID);
+        ESP_AT_Send_Command_Sync_Get_Result(cmd);
+        break; // HTML 응답 후 루프 종료
+
+        // if (!isCss && !isIcon)
+        // {
+        //     ESP_AT_Send_Command_Sync_Get_Result(cmd);
+
+        //     break; // HTML 응답 후 루프 종료
+        // }
+    }
+}
+
+
+
+void Handle_IPD_and_Respond_3(void)
+{
+    uint8_t  ch;
+    char     ipdHdr[IPD_HDR_MAX];
+    char     payload[PAYLOAD_MAX];
+    uint16_t linkID, dataLen;
+    int      hdrPos, payPos;
+    uint32_t start;
+    char     respHdr[128];
+    int      hdrLen, bodyLen;
+    char     cmd[64];
+    int      cmdLen, match;
+
+    while (1)
+    {
+        IPD_START:
+        // — 1) "+IPD" 헤더 수집 ("+IPD,<linkID>,<len>:" 형태)
+        hdrPos = 0;
+        // '+' 문자 대기
+        do {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                // return;
+                goto IPD_START; // 재시도
+            }
+        } while (ch != '+');
+        ipdHdr[hdrPos++] = '+';
+
+        // ':'까지 읽기
+        while (hdrPos < IPD_HDR_MAX - 1)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                // return;
+                goto IPD_START; // 재시도
+            }
+            ipdHdr[hdrPos++] = ch;
+            if (ch == ':')
+            {
+                break;
+            }
+        }
+        ipdHdr[hdrPos] = '\0';
+
+        // -------------------------------------
+
+        // — 2) linkID, dataLen 파싱
+        if (sscanf(ipdHdr, "+IPD,%hu,%hu:", &linkID, &dataLen) != 2)
+        {
+            // return;
+            goto IPD_START; // 재시도
+        }
+
+        // -------------------------------------
+
+        // — 3) payload 읽기 (최대 PAYLOAD_MAX-1 바이트)
+        payPos = 0;
+        for (uint16_t i = 0; i < dataLen; ++i)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                // return;
+                goto IPD_START; // 재시도
+            }
+            if (payPos < PAYLOAD_MAX - 1)
+            {
+                payload[payPos++] = ch;
+            }
+        }
+        payload[payPos] = '\0';
+
+        // -------------------------------------
+
+        // — 4) GET 라인에서 URL 추출
+        //    예: "GET /style.css HTTP/1.1"
+        char method[8] = {0}, url[128] = {0};
+        int  isCss = 0, isIcon = 0;
+        if (sscanf(payload, "%7s %127s", method, url) == 2)
+        {
+            if (strcmp(url, "/favicon.ico") == 0 || strstr(url, "apple-touch-icon") != NULL){
+                isIcon = 1;
+            }
+            
+        }
+
+        // -------------------------------------
+
+        // — 5) 응답 헤더 + 바디 길이 결정
+        if (isIcon)
+        {
+            bodyLen = 0;
+            hdrLen = snprintf(respHdr, sizeof(respHdr),
+                "HTTP/1.1 204 No Content\r\n"
+                "Connection: close\r\n"
+                "\r\n");
+        }
+        else
+        {
+            bodyLen = htmlBody_inlineLen;
+            hdrLen = snprintf(respHdr, sizeof(respHdr),
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/html; charset=utf-8\r\n"
+                "Content-Length: %d\r\n"
+                "Connection: close\r\n"
+                "\r\n",
+                bodyLen);
+        }
+        if (hdrLen < 0 || hdrLen >= (int)sizeof(respHdr))
+        {
+            // return;
+            goto IPD_START; // 재시도
+        }
+
+        // -------------------------------------
+
+        // — 6) AT+CIPSEND=<linkID>,<hdrLen+bodyLen>
+        cmdLen = snprintf(cmd, sizeof(cmd), "AT+CIPSEND=%hu,%d\r\n",
+                        linkID, hdrLen + bodyLen);
+        if (cmdLen < 0 || cmdLen >= (int)sizeof(cmd))
+        {
+            return;
+        }
+
+        HAL_UART_Transmit(&huart2, (uint8_t*)cmd, cmdLen, HAL_MAX_DELAY);
+
+        // -------------------------------------
+
+        // — 7) '>' 프롬프트 대기
+        start = HAL_GetTick();
+        do {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK &&
+                ch == '>')
+            {
+                break;
+            }
+        } while (HAL_GetTick() - start < RX_TIMEOUT);
+
+        // -------------------------------------
+
+        // — 8) 헤더/바디 전송
+        HAL_UART_Transmit(&huart2, (uint8_t*)respHdr, hdrLen, HAL_MAX_DELAY);
+        HAL_UART_Transmit(&huart1, (uint8_t*)respHdr, hdrLen, HAL_MAX_DELAY);
+        if (!isIcon)
+        {
+            HAL_UART_Transmit(&huart2, (uint8_t*)htmlBody_inline, htmlBody_inlineLen, HAL_MAX_DELAY);
+        }
+
+        // -------------------------------------
+
+        // — 9) "SEND OK" URC 대기
+        const char sendOk[] = "SEND OK";
+        match = 0;
+        start = HAL_GetTick();
+        while (HAL_GetTick() - start < SEND_TIMEOUT)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK)
+            {
+                if (ch == sendOk[match])
+                {
+                    if (++match == (int)strlen(sendOk))
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    match = 0;
+                }
+            }
+        }
+
+        // -------------------------------------
+
+        // — 10) 연결 종료
+        // HAL_Delay(50);
+        cmdLen = snprintf(cmd, sizeof(cmd), "AT+CIPCLOSE=%hu\r\n", linkID);
+        ESP_AT_Send_Command_Sync_Get_Result(cmd);
+        break; // HTML 응답 후 루프 종료
+
+        // if (!isCss && !isIcon)
+        // {
+        //     ESP_AT_Send_Command_Sync_Get_Result(cmd);
+
+        //     break; // HTML 응답 후 루프 종료
+        // }
+    }
+}
+
+
+
+void Handle_IPD_and_Respond_4(void)
+{
+    uint8_t  ch;
+    char     ipdHdr[IPD_HDR_MAX];
+    char     payload[PAYLOAD_MAX];
+    uint16_t linkID, dataLen;
+    int      hdrPos, payPos;
+    uint32_t start;
+    char     respHdr[128];
+    int      hdrLen, bodyLen;
+    char     cmd[64];
+    int      cmdLen, match;
+    int      isLed=0, isIcon=0;
+
+    while (1)
+    {
+        IPD_START:
+        // — 1) "+IPD" 헤더 수집 ("+IPD,<linkID>,<len>:" 형태)
+        hdrPos = 0;
+        // '+' 문자 대기
+        do {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                // return;
+                goto IPD_START; // 재시도
+            }
+        } while (ch != '+');
+        ipdHdr[hdrPos++] = '+';
+
+        // ':'까지 읽기
+        while (hdrPos < IPD_HDR_MAX - 1)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                // return;
+                goto IPD_START; // 재시도
+            }
+            ipdHdr[hdrPos++] = ch;
+            if (ch == ':')
+            {
+                break;
+            }
+        }
+        ipdHdr[hdrPos] = '\0';
+
+        // -------------------------------------
+
+        // — 2) linkID, dataLen 파싱
+        if (sscanf(ipdHdr, "+IPD,%hu,%hu:", &linkID, &dataLen) != 2)
+        {
+            // return;
+            goto IPD_START; // 재시도
+        }
+
+        // -------------------------------------
+
+        // — 3) payload 읽기 (최대 PAYLOAD_MAX-1 바이트)
+        payPos = 0;
+        for (uint16_t i = 0; i < dataLen; ++i)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                // return;
+                goto IPD_START; // 재시도
+            }
+            if (payPos < PAYLOAD_MAX - 1)
+            {
+                payload[payPos++] = ch;
+            }
+        }
+        payload[payPos] = '\0';
+
+        // -------------------------------------
+
+        // — 4) GET 라인에서 URL 추출
+        //    예: "GET /style.css HTTP/1.1"
+        char method[8] = {0}, url[128] = {0};
+        if (sscanf(payload, "%7s %127s", method, url) == 2)
+        {
+            if (strcmp(url, "/led") == 0)
+            {
+                isLed = 1;
+            }
+            else if (strcmp(url, "/favicon.ico") == 0 || strstr(url, "apple-touch-icon") != NULL)
+            {
+                isIcon = 1;
+            }
+            
+        }
+
+        // -------------------------------------
+
+        // — 5) 응답 헤더 + 바디 길이 결정
+        if (isIcon)
+        {
+            bodyLen = 0;
+            hdrLen = snprintf(respHdr, sizeof(respHdr),
+                "HTTP/1.1 204 No Content\r\n"
+                "Connection: close\r\n"
+                "\r\n");
+        }
+        else
+        {
+            bodyLen = htmlBody_inline_2Len;
+            hdrLen = snprintf(respHdr, sizeof(respHdr),
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/html; charset=utf-8\r\n"
+                "Content-Length: %d\r\n"
+                "Connection: close\r\n"
+                "\r\n",
+                bodyLen);
+        }
+        if (hdrLen < 0 || hdrLen >= (int)sizeof(respHdr))
+        {
+            // return;
+            goto IPD_START; // 재시도
+        }
+
+        // 만약 /quit 요청이면 STM32 쪽으로 UART1 신호 전송
+        if (isLed)
+        {
+            const char stmMsg[] = "JS+LED\r\n";
+            // HAL_UART_Transmit(&huart1, (uint8_t*)stmMsg, strlen(stmMsg), HAL_MAX_DELAY);
+            // 인터럽트로 전송
+            HAL_UART_Transmit_IT(&huart1, (uint8_t*)stmMsg, strlen(stmMsg));
+            RX_LED_Toggle();
+        }
+
+        // -------------------------------------
+
+        // — 6) AT+CIPSEND=<linkID>,<hdrLen+bodyLen>
+        cmdLen = snprintf(cmd, sizeof(cmd), "AT+CIPSEND=%hu,%d\r\n",
+                        linkID, hdrLen + bodyLen);
+        if (cmdLen < 0 || cmdLen >= (int)sizeof(cmd))
+        {
+            return;
+        }
+
+        HAL_UART_Transmit(&huart2, (uint8_t*)cmd, cmdLen, HAL_MAX_DELAY);
+
+        // -------------------------------------
+
+        // — 7) '>' 프롬프트 대기
+        start = HAL_GetTick();
+        do {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK &&
+                ch == '>')
+            {
+                break;
+            }
+        } while (HAL_GetTick() - start < RX_TIMEOUT);
+
+        // -------------------------------------
+
+        // — 8) 헤더/바디 전송
+        HAL_UART_Transmit(&huart2, (uint8_t*)respHdr, hdrLen, HAL_MAX_DELAY);
+        // HAL_UART_Transmit(&huart1, (uint8_t*)respHdr, hdrLen, HAL_MAX_DELAY);
+        if (!isIcon)
+        {
+            HAL_UART_Transmit(&huart2, (uint8_t*)htmlBody_inline_2, htmlBody_inline_2Len, HAL_MAX_DELAY);
+        }
+
+        // -------------------------------------
+
+        // — 9) "SEND OK" URC 대기
+        const char sendOk[] = "SEND OK";
+        match = 0;
+        start = HAL_GetTick();
+        while (HAL_GetTick() - start < SEND_TIMEOUT)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK)
+            {
+                if (ch == sendOk[match])
+                {
+                    if (++match == (int)strlen(sendOk))
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    match = 0;
+                }
+            }
+        }
+
+        // -------------------------------------
+
+        // — 10) 연결 종료
+        // HAL_Delay(50);
+        cmdLen = snprintf(cmd, sizeof(cmd), "AT+CIPCLOSE=%hu\r\n", linkID);
+        ESP_AT_Send_Command_Sync_Get_Result(cmd);
+        break; // HTML 응답 후 루프 종료
     }
 }

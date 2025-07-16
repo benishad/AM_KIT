@@ -35,7 +35,7 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
  ../Core/Inc/sd_card.h ../Core/Inc/esp32_at.h ../Core/Inc/server_api.h \
  ../Core/Inc/real_time.h ../Core/Inc/device.h ../Core/Inc/backup.h \
  ../Core/Inc/operate.h ../Core/Inc/main_proc.h ../Core/Inc/led.h \
- ../Core/Inc/web_page.h ../FATFS/App/fatfs.h \
+ ../Core/Inc/web_page.h ../Core/Inc/sim.h ../FATFS/App/fatfs.h \
  ../Middlewares/Third_Party/FatFs/src/ff.h \
  ../Middlewares/Third_Party/FatFs/src/integer.h ../FATFS/Target/ffconf.h \
  ../FATFS/Target/bsp_driver_sd.h \
@@ -86,6 +86,7 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
 ../Core/Inc/main_proc.h:
 ../Core/Inc/led.h:
 ../Core/Inc/web_page.h:
+../Core/Inc/sim.h:
 ../FATFS/App/fatfs.h:
 ../Middlewares/Third_Party/FatFs/src/ff.h:
 ../Middlewares/Third_Party/FatFs/src/integer.h:

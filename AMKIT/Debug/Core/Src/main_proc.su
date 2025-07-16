@@ -1,8 +1,9 @@
 ../Core/Src/main_proc.c:51:6:SD_Card_Check	16	static
 ../Core/Src/main_proc.c:73:6:Mode_Check	16	static
-../Core/Src/main_proc.c:103:6:AP_Mode_Proc	24	static
-../Core/Src/main_proc.c:214:6:Error_Proc	24	static
-../Core/Src/main_proc.c:236:6:Master_Proc	8	static
-../Core/Src/main_proc.c:253:6:DEBUG_Proc	16	static
-../Core/Src/main_proc.c:295:6:Timer_Interrupt_Proc	112	static
-../Core/Src/main_proc.c:461:6:Main_System	8	static
+../Core/Src/main_proc.c:105:6:AP_Mode_Proc	24	static
+../Core/Src/main_proc.c:216:6:Error_Proc	24	static
+../Core/Src/main_proc.c:238:6:Master_Proc	8	static
+../Core/Src/main_proc.c:255:6:DEBUG_Proc	280	static
+../Core/Src/main_proc.c:395:6:Test_Proc	24	static
+../Core/Src/main_proc.c:640:6:Timer_Interrupt_Proc	112	static
+../Core/Src/main_proc.c:806:6:Main_System	8	static

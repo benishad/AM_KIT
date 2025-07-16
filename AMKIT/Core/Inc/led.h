@@ -14,6 +14,7 @@ void LED_Init(void);
 
 void RX_LED_On(void);
 void RX_LED_Off(void);
+void RX_LED_Toggle(void);
 
 void TX_LED_On(void);
 void TX_LED_Off(void);

@@ -15,6 +15,13 @@ extern const int htmlBodyLen;
 extern const char   htmlBody_2[];
 extern const int htmlBody_2Len;
 
+extern const char   htmlBody_inline[];
+extern const int htmlBody_inlineLen;
+
+extern const char htmlBody_inline_2[];
+extern const int htmlBody_inline_2Len;
+
+
 extern const char cssStyle[];
 extern const int cssStyleLen;
 
