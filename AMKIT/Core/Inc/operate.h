@@ -9,6 +9,7 @@
 #define INC_OPERATE_H_
 
 #include <stdint.h>
+#include <stddef.h>
 
 
 extern uint8_t g_nBoot_Status;                          // 부팅 상태 (0: 부팅 성공, 1: 부팅 중, 2: 부팅 실패 등)
@@ -39,6 +40,9 @@ enum BootStatus
     BOOT_IN_PROGRESS,         // 부팅 중
     BOOT_ERROR,               // 부팅 실패
 };
+
+
+int readLineFromUart2(char *buf, size_t maxLen);
 
 
 #endif /* INC_OPERATE_H_ */

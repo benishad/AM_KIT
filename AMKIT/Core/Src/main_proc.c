@@ -43,6 +43,8 @@ uint8_t g_nMode = 0;                                  // 현재 모드 (0: 마�
 uint8_t g_nWifi_Status = DEVICE_WIFI_DISCONNECTED;    // WiFi 연결 상태 (0: 연결 안됨, 1: 연결 됨)
 uint8_t g_nTime_Status = DEVICE_TIME_NOT_SYNCED;      // 시간 동기화 상태 (0: 동기화 안됨, 1: 동기화 됨)
 uint8_t g_nToken_Status = DEVICE_TOKEN_NOT_SET;       // 토큰 상태 (0: 토큰 없음, 1: 토큰 있음)
+uint8_t g_nWifi_SSID_Status = DEVICE_WIFI_SSID_NOT_SET; // WiFi SSID 상태 (0: SSID 없음, 1: SSID 있음)
+uint8_t g_nWifi_Password_Status = DEVICE_WIFI_PASSWORD_NOT_SET; // WiFi 비밀번호 상태 (0: 비밀번호 없음, 1: 비밀번호 있음)
 
 // ──────────────────────────────────────────────────────────────────────────────
 
@@ -211,6 +213,14 @@ void AP_Mode_Proc(void)
 
 
 // ──────────────────────────────────────────────────────────────────────────────
+//    ______ _____  _____   ____  _____             _____  _____   ____   _____ 
+//   |  ____|  __ \|  __ \ / __ \|  __ \           |  __ \|  __ \ / __ \ / ____|
+//   | |__  | |__) | |__) | |  | | |__) |  ______  | |__) | |__) | |  | | |     
+//   |  __| |  _  /|  _  /| |  | |  _  /  |______| |  ___/|  _  /| |  | | |     
+//   | |____| | \ \| | \ \| |__| | | \ \           | |    | | \ \| |__| | |____ 
+//   |______|_|  \_\_|  \_\\____/|_|  \_\          |_|    |_|  \_\\____/ \_____|
+//                                                                              
+// ──────────────────────────────────────────────────────────────────────────────
 // 파라미터 0 : Error_Handler 호출
 // 파라미터 !0 : uart1 코맨트 전송
 void Error_Proc(int errorCode)
@@ -234,7 +244,14 @@ void Error_Proc(int errorCode)
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-
+//    __  __           _____ _______ ______ _____             _____  _____   ____   _____ 
+//   |  \/  |   /\    / ____|__   __|  ____|  __ \           |  __ \|  __ \ / __ \ / ____|
+//   | \  / |  /  \  | (___    | |  | |__  | |__) |  ______  | |__) | |__) | |  | | |     
+//   | |\/| | / /\ \  \___ \   | |  |  __| |  _  /  |______| |  ___/|  _  /| |  | | |     
+//   | |  | |/ ____ \ ____) |  | |  | |____| | \ \           | |    | | \ \| |__| | |____ 
+//   |_|  |_/_/    \_\_____/   |_|  |______|_|  \_\          |_|    |_|  \_\\____/ \_____|
+//                                                                                        
+// ──────────────────────────────────────────────────────────────────────────────
 void Master_Proc(void) 
 {
     switch (g_nBoot_Step)
@@ -251,7 +268,14 @@ void Master_Proc(void)
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-
+//    _____  ______ ____  _    _  _____            _____  _____   ____   _____ 
+//   |  __ \|  ____|  _ \| |  | |/ ____|          |  __ \|  __ \ / __ \ / ____|
+//   | |  | | |__  | |_) | |  | | |  __   ______  | |__) | |__) | |  | | |     
+//   | |  | |  __| |  _ <| |  | | | |_ | |______| |  ___/|  _  /| |  | | |     
+//   | |__| | |____| |_) | |__| | |__| |          | |    | | \ \| |__| | |____ 
+//   |_____/|______|____/ \____/ \_____|          |_|    |_|  \_\\____/ \_____|
+//                                                                             
+// ─────────────────────────────────────────────────────────────────────────────
 void DEBUG_Proc(void)
 {
     // 디버그 모드인걸 uart로 알리기
@@ -265,6 +289,153 @@ void DEBUG_Proc(void)
     uint32_t start = HAL_GetTick();
     uint8_t  ch;
     size_t   idx = 0;
+
+    int step = 0;
+    int result = 0;
+    int bootLoop = 1;
+
+    const char *macAddress;
+
+    // 테스트 모드 부팅 동작
+    while (bootLoop)
+    {
+        // 10ms 단위로 진행
+        if (ms_tick_1 % 10 == 0)
+        {
+            switch (step)
+            {
+            case TEST_STEP_SD_BOOT:
+                result = SD_Card_Boot(); // SD 카드 초기화 및 테스트 / 와이파이 파일 확인
+                
+                SD_Card_Log("SD Card Boot...\n");
+                
+                if (result == SD_OK)
+                {
+                    SD_Card_Log("SD Card Booted Successfully!\n");
+                    debugMsg = "SD Card Booted Successfully!\n";
+                    HAL_UART_Transmit(&huart1, (uint8_t*)debugMsg, strlen(debugMsg), HAL_MAX_DELAY);
+                    step++; // 다음 단계로 이동
+                }
+                else
+                {
+                    SD_Card_Log("SD Card Boot Failed!\n");
+                    SD_Card_Log("again...\n");
+                    // SD 카드 부팅 실패 시 에러 처리
+                    // Error_Handler();
+                    // Error_Proc(1);
+                }
+                break;
+                // ----------------------
+            case TEST_STEP_ESP_BOOT:
+                result = ESP_AT_Boot(); // ESP32 AT 테스트
+
+                SD_Card_Log("ESP32 AT Boot...\n");
+
+                if (result == AT_OK)
+                {
+                    SD_Card_Log("ESP32 AT Booted Successfully!\n");
+                    debugMsg = "ESP32 AT Booted Successfully!\n";
+                    HAL_UART_Transmit(&huart1, (uint8_t*)debugMsg, strlen(debugMsg), HAL_MAX_DELAY);
+                    step++; // 다음 단계로 이동
+                }
+                else
+                {
+                    SD_Card_Log("ESP32 AT Boot Failed!\n");
+                    SD_Card_Log("again...\n");
+                    // ESP32 AT 부팅 실패 시 에러 처리
+                    //Error_Handler();
+                    // Error_Proc(1);
+                }
+                break;
+                // ----------------------
+            case TEST_STEP_MAC_CONFIG:
+                // MAC 주소 상태 로드
+                Load_MAC_Status_FRAM(); // FRAM에서 MAC 주소 상태 로드
+
+                g_nMac_Status = DEVICE_MAC_NOT_SET;
+
+                SD_Card_Log("MAC Address Configuration...\n");
+
+                if (g_nMac_Status == DEVICE_MAC_NOT_SET) // MAC 주소가 설정되지 않은 경우
+                {
+                    macAddress = ESP_AT_Get_MAC_Address(); // ESP32 AT 명령어를 통해 MAC 주소 조회
+
+                    // MAC 주소 저장
+                    SERVER_API_Set_MAC_Address(macAddress);  // 서버 API MAC 주소 저장 함수 호출
+
+                    // 메모리에 MAC 주소 저장
+                    Save_MAC_FRAM(macAddress); // FRAM에 MAC 주소 저장
+                    
+                    g_nMac_Status = DEVICE_MAC_SET; // MAC 주소 상태 업데이트
+                    Save_MAC_Status_FRAM(); // FRAM에 MAC 주소 상태 저장
+
+                    SD_Card_Log("MAC Address Set Successfully!\n");
+                    debugMsg = "MAC Address Set Successfully!\n";
+                    HAL_UART_Transmit(&huart1, (uint8_t*)debugMsg, strlen(debugMsg), HAL_MAX_DELAY);
+                    // macAddress uart1로 전송
+                    HAL_UART_Transmit(&huart1, (uint8_t*)macAddress, strlen(macAddress), HAL_MAX_DELAY);
+
+                    step++; // 다음 단계로 이동
+                }
+                else // MAC 주소가 이미 설정된 경우
+                {
+                    // MAC 주소 불러오기
+                    Load_MAC_FRAM(); // FRAM에서 MAC 주소 로드
+
+                    SD_Card_Log("MAC Address Already Set!\n");
+
+                    step++; // 다음 단계로 이동
+                }
+                break;
+                // ----------------------
+            case TEST_STEP_WIFI_CONFIG:
+                // 와이파이 드라이버 초기화
+                result = ESP_AT_Send_Command_Sync_Get_int("AT+CWINIT=1\r\n");
+
+                SD_Card_Log("ESP32 WiFi Init...\n");
+
+                if (result == AT_OK)
+                {
+                    SD_Card_Log("ESP32 WiFi Init Success!\n");
+                    debugMsg = "ESP32 WiFi Init Success!\n";
+                    HAL_UART_Transmit(&huart1, (uint8_t*)debugMsg, strlen(debugMsg), HAL_MAX_DELAY);
+                    step++; // 다음 단계로 이동
+                }
+                else
+                {
+                    SD_Card_Log("ESP32 WiFi Init Failed!\n");
+                    SD_Card_Log("again...\n");
+                    // ESP32 WiFi 초기화 실패 시 에러 처리
+                    // Error_Proc(1);
+                }
+                break;
+                // ----------------------
+            case TEST_STEP_WIFI_MODE_SET:
+                // softAP 모드로 설정
+                result = ESP_AT_Send_Command_Sync_Get_int("AT+CWMODE=2\r\n");
+                SD_Card_Log("ESP32 Set SoftAP Mode...\n");
+                if (result == AT_OK)
+                {
+                    SD_Card_Log("ESP32 Set SoftAP Mode Success!\n");
+                    debugMsg = "ESP32 Set SoftAP Mode Success!\n";
+                    HAL_UART_Transmit(&huart1, (uint8_t*)debugMsg, strlen(debugMsg), HAL_MAX_DELAY);
+
+                    bootLoop = 0; // 부팅 루프 종료
+                }
+                else
+                {
+                    SD_Card_Log("ESP32 Set SoftAP Mode Failed!\n");
+                    SD_Card_Log("again...\n");
+                    // ESP32 SoftAP 모드 설정 실패 시 에러 처리
+                    // Error_Proc(1);
+                }
+                break;
+                // ----------------------
+            }
+        }
+    }
+
+
 #if 0
     // 펄스로 떨구기
     start = HAL_GetTick();
@@ -391,7 +562,14 @@ void DEBUG_Proc(void)
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-
+//    _______ ______  _____ _______            _____  _____   ____   _____ 
+//   |__   __|  ____|/ ____|__   __|          |  __ \|  __ \ / __ \ / ____|
+//      | |  | |__  | (___    | |     ______  | |__) | |__) | |  | | |     
+//      | |  |  __|  \___ \   | |    |______| |  ___/|  _  /| |  | | |     
+//      | |  | |____ ____) |  | |             | |    | | \ \| |__| | |____ 
+//      |_|  |______|_____/   |_|             |_|    |_|  \_\\____/ \_____|
+//                                                                                                                                 
+// ─────────────────────────────────────────────────────────────────────────────
 void Test_Proc(void)
 {
     // 테스트 모드 프로세스
@@ -402,6 +580,8 @@ void Test_Proc(void)
     int step = 0;
     int result = 0;
     int bootLoop = 1;
+
+    const char *macAddress;
  
     const char *testMsg = "TEST MODE ACTIVE!\r\n";
     HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
@@ -409,225 +589,328 @@ void Test_Proc(void)
     // 테스트 모드 부팅 동작
     while (bootLoop)
     {
-        switch (step)
+        // 10ms 단위로 진행
+        if (ms_tick_1 % 10 == 0)
         {
-        case 0:
-            result = SD_Card_Boot(); // SD 카드 초기화 및 테스트 / 와이파이 파일 확인
+            switch (step)
+            {
+            case TEST_STEP_SD_BOOT:
+                result = SD_Card_Boot(); // SD 카드 초기화 및 테스트 / 와이파이 파일 확인
+                
+                SD_Card_Log("SD Card Boot...\n");
+                
+                if (result == SD_OK)
+                {
+                    SD_Card_Log("SD Card Booted Successfully!\n");
+                    testMsg = "SD Card Booted Successfully!\n";
+                    HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
+                    step++; // 다음 단계로 이동
+                }
+                else
+                {
+                    SD_Card_Log("SD Card Boot Failed!\n");
+                    SD_Card_Log("again...\n");
+                    // SD 카드 부팅 실패 시 에러 처리
+                    // Error_Handler();
+                    // Error_Proc(1);
+                }
+                break;
+                // ----------------------
+            case TEST_STEP_ESP_BOOT:
+                result = ESP_AT_Boot(); // ESP32 AT 테스트
+
+                SD_Card_Log("ESP32 AT Boot...\n");
+
+                if (result == AT_OK)
+                {
+                    SD_Card_Log("ESP32 AT Booted Successfully!\n");
+                    testMsg = "ESP32 AT Booted Successfully!\n";
+                    HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
+                    step++; // 다음 단계로 이동
+                }
+                else
+                {
+                    SD_Card_Log("ESP32 AT Boot Failed!\n");
+                    SD_Card_Log("again...\n");
+                    // ESP32 AT 부팅 실패 시 에러 처리
+                    //Error_Handler();
+                    // Error_Proc(1);
+                }
+                break;
+                // ----------------------
+            case TEST_STEP_MAC_CONFIG:
+                // MAC 주소 상태 로드
+                Load_MAC_Status_FRAM(); // FRAM에서 MAC 주소 상태 로드
+
+                g_nMac_Status = DEVICE_MAC_NOT_SET;
+
+                SD_Card_Log("MAC Address Configuration...\n");
+
+                if (g_nMac_Status == DEVICE_MAC_NOT_SET) // MAC 주소가 설정되지 않은 경우
+                {
+                    macAddress = ESP_AT_Get_MAC_Address(); // ESP32 AT 명령어를 통해 MAC 주소 조회
+
+                    // MAC 주소 저장
+                    SERVER_API_Set_MAC_Address(macAddress);  // 서버 API MAC 주소 저장 함수 호출
+
+                    // 메모리에 MAC 주소 저장
+                    Save_MAC_FRAM(macAddress); // FRAM에 MAC 주소 저장
+                    
+                    g_nMac_Status = DEVICE_MAC_SET; // MAC 주소 상태 업데이트
+                    Save_MAC_Status_FRAM(); // FRAM에 MAC 주소 상태 저장
+
+                    SD_Card_Log("MAC Address Set Successfully!\n");
+                    testMsg = "MAC Address Set Successfully!\n";
+                    HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
+                    // macAddress uart1로 전송
+                    HAL_UART_Transmit(&huart1, (uint8_t*)macAddress, strlen(macAddress), HAL_MAX_DELAY);
+
+                    step++; // 다음 단계로 이동
+                }
+                else // MAC 주소가 이미 설정된 경우
+                {
+                    // MAC 주소 불러오기
+                    Load_MAC_FRAM(); // FRAM에서 MAC 주소 로드
+
+                    SD_Card_Log("MAC Address Already Set!\n");
+
+                    step++; // 다음 단계로 이동
+                }
+                break;
+                // ----------------------
+            case TEST_STEP_WIFI_CONFIG:
+                // 와이파이 드라이버 초기화
+                result = ESP_AT_Send_Command_Sync_Get_int("AT+CWINIT=1\r\n");
+
+                SD_Card_Log("ESP32 WiFi Init...\n");
+
+                if (result == AT_OK)
+                {
+                    SD_Card_Log("ESP32 WiFi Init Success!\n");
+                    testMsg = "ESP32 WiFi Init Success!\n";
+                    HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
+                    step++; // 다음 단계로 이동
+                }
+                else
+                {
+                    SD_Card_Log("ESP32 WiFi Init Failed!\n");
+                    SD_Card_Log("again...\n");
+                    // ESP32 WiFi 초기화 실패 시 에러 처리
+                    // Error_Proc(1);
+                }
+                break;
+                // ----------------------
+            case TEST_STEP_WIFI_MODE_SET:
+                // softAP 모드로 설정
+                result = ESP_AT_Send_Command_Sync_Get_int("AT+CWMODE=3\r\n");
+                SD_Card_Log("ESP32 Set SoftAP Mode...\n");
+                if (result == AT_OK)
+                {
+                    SD_Card_Log("ESP32 Set SoftAP Mode Success!\n");
+                    testMsg = "ESP32 Set SoftAP Mode Success!\n";
+                    HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
+                    step++; // 다음 단계로 이동
+                }
+                else
+                {
+                    SD_Card_Log("ESP32 Set SoftAP Mode Failed!\n");
+                    SD_Card_Log("again...\n");
+                    // ESP32 SoftAP 모드 설정 실패 시 에러 처리
+                    // Error_Proc(1);
+                }
+                break;
+                // ----------------------
+            case TEST_STEP_WIFI_SCAN:
+                // 와이파이 스캔
+                const char *wifiScanResult = ESP_AT_Send_Command_Sync_Get_Result("AT+CWLAP\r\n");
+                SD_Card_Log("ESP32 WiFi Scan...\n");
+
+                if (wifiScanResult != NULL) // 주변 WiFi 네트워크 있음
+                {
+                    SD_Card_Log("ESP32 WiFi Scan Success!\n");
+                    testMsg = "ESP32 WiFi Scan Success!\n";
+                    HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
+                    HAL_UART_Transmit(&huart1, (uint8_t*)wifiScanResult, strlen(wifiScanResult), HAL_MAX_DELAY);
+                    
+                    
+                    /* 2 단계에서 HTML을 채워 넣기 위해 먼저 0 초기화 */
+                    g_cWifiListHtml[0] = '\0';
+
+                    /* 2 단계: 파싱 & HTML 생성 */
+                    parseCwlapToHtml(wifiScanResult, g_cWifiListHtml, WIFI_HTML_MAX);
+
+                    g_nWifiListReady = 1;          // 캐시 준비 완료
+                    
+
+
+
+
+                    step++; // 다음 단계로 이동
+                }
+                else    // 주변 WiFi 네트워크가 없거나 스캔 실패
+                {
+                    SD_Card_Log("ESP32 WiFi Scan Failed!\n");
+                    // SD_Card_Log("again...\n");
+                    // ESP32 WiFi 스캔 실패 시 에러 처리
+                    // Error_Proc(1);
+                    step++; // 다음 단계로 이동
+                }
+                break;
+                // ----------------------
+            case TEST_STEP_SOFTAP_SET:
+                char ssidCmd[64];
+                int len = snprintf(
+                    ssidCmd, sizeof(ssidCmd),
+                    "AT+CWSAP=\"AMKIT_%s\",\"\",5,0\r\n",
+                    macAddress
+                );
+                if (len < 0 || len >= (int)sizeof(ssidCmd))
+                {
+                    // 오류 처리
+                    Error_Proc(1);
+                }
+
+                // AP SSID와 비밀번호 설정
+                // result = ESP_AT_Send_Command_Sync_Get_int("AT+CWSAP=\"AMKIT_AP\",\"\",5,0\r\n");
+                result = ESP_AT_Send_Command_Sync_Get_int(ssidCmd);
+                SD_Card_Log("ESP32 Set SoftAP SSID and Password...\n");
+                if (result == AT_OK)
+                {
+                    SD_Card_Log("ESP32 Set SoftAP SSID and Password Success!\n");
+                    testMsg = "ESP32 Set SoftAP SSID and Password Success!\n";
+                    HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
+                    // SSID 확인
+                    char logMsg[80];
+                    snprintf(logMsg, sizeof(logMsg), "SSID => AMKIT_%s\r\n", macAddress);
+                    HAL_UART_Transmit(&huart1, (uint8_t*)logMsg, strlen(logMsg), HAL_MAX_DELAY);
+
+                    step++; // 다음 단계로 이동
+                }
+                else
+                {
+                    SD_Card_Log("ESP32 Set SoftAP SSID and Password Failed!\n");
+                    SD_Card_Log("again...\n");
+                    // ESP32 SoftAP SSID와 비밀번호 설정 실패 시 에러 처리
+                    // Error_Proc(1);
+                }
+                break;
+                // ----------------------
+            case TEST_STEP_SOFTAP_DHCP:
+                // SoftAP DHCP 서버 활성화
+                result = ESP_AT_Send_Command_Sync_Get_int("AT+CWDHCP=1,2\r\n");
+                SD_Card_Log("ESP32 Enable SoftAP DHCP Server...\n");
+                if (result == AT_OK)
+                {
+                    SD_Card_Log("ESP32 Enable SoftAP DHCP Server Success!\n");
+                    testMsg = "ESP32 Enable SoftAP DHCP Server Success!\n";
+                    HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
+                    step++; // 다음 단계로 이동
+                }
+                else
+                {
+                    SD_Card_Log("ESP32 Enable SoftAP DHCP Server Failed!\n");
+                    SD_Card_Log("again...\n");
+                    // ESP32 SoftAP DHCP 서버 활성화 실패 시 에러 처리
+                    // Error_Proc(1);
+                }
+                break;
+                // ----------------------
+            case TEST_STEP_SOFTAP_IP_SET:
+            #if 0
+                // SoftAP IP 주소 조회
+                result = ESP_AT_Send_Command_Sync_Get_int("AT+CIPAP?\r\n");
+                SD_Card_Log("ESP32 Get SoftAP IP Address...\n");
+                if (result == AT_OK)
+                {
+                    SD_Card_Log("ESP32 Get SoftAP IP Address Success!\n");
+                    testMsg = "ESP32 Get SoftAP IP Address Success!\n";
+                    HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
+                    step++; // 다음 단계로 이동
+                }
+                else
+                {
+                    SD_Card_Log("ESP32 Get SoftAP IP Address Failed!\n");
+                    SD_Card_Log("again...\n");
+                    // ESP32 SoftAP IP 주소 조회 실패 시 에러 처리
+                    Error_Proc(1);
+                }
+            #else
+                // SoftAP IP 주소 설정
+                result = ESP_AT_Send_Command_Sync_Get_int("AT+CIPAP=\"192.168.4.1\",\"255.255.255.0\"\r\n");
+                SD_Card_Log("ESP32 Set SoftAP IP Address...\n");
+                if (result == AT_OK)
+                {
+                    SD_Card_Log("ESP32 Set SoftAP IP Address Success!\n");
+                    testMsg = "ESP32 Set SoftAP IP Address Success!\n";
+                    HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
+                    step++; // 다음 단계로 이동
+                }
+                else
+                {
+                    SD_Card_Log("ESP32 Set SoftAP IP Address Failed!\n");
+                    SD_Card_Log("again...\n");
+                    // ESP32 SoftAP IP 주소 설정 실패 시 에러 처리
+                    // Error_Proc(1);
+                }
+            #endif
+                break;
+                // ----------------------
+            case TEST_STEP_MULTIPLE_CONNECTION:
+                // 멀티플 커넥션 모드 설정
+                result = ESP_AT_Send_Command_Sync_Get_int("AT+CIPMUX=1\r\n");
+                SD_Card_Log("ESP32 Set Multiple Connection Mode...\n");
+                if (result == AT_OK)
+                {
+                    SD_Card_Log("ESP32 Set Multiple Connection Mode Success!\n");
+                    testMsg = "ESP32 Set Multiple Connection Mode Success!\n";
+                    HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
+                    step++; // 다음 단계로 이동
+                }
+                else
+                {
+                    SD_Card_Log("ESP32 Set Multiple Connection Mode Failed!\n");
+                    SD_Card_Log("again...\n");
+                    // ESP32 멀티플 커넥션 모드 설정 실패 시 에러 처리
+                    // Error_Proc(1);
+                }
+                break;
+                // ----------------------
+            case TEST_STEP_HTTP_SERVER_START:
+                // HTTP 서버 시작
+                result = ESP_AT_Send_Command_Sync_Get_int("AT+CIPSERVER=1,80\r\n");
+                SD_Card_Log("ESP32 Start HTTP Server...\n");
+                if (result == AT_OK)
+                {
+                    SD_Card_Log("ESP32 Start HTTP Server Success!\n");
+                    testMsg = "ESP32 Start HTTP Server Success!\n";
+                    HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
+                    step++; // 다음 단계로 이동
+
+                    g_nBoot_Status = BOOT_SUCCESS; // 부팅 성공 상태로 설정
+                }
+                else
+                {
+                    SD_Card_Log("ESP32 Start HTTP Server Failed!\n");
+                    SD_Card_Log("again...\n");
+                    // ESP32 HTTP 서버 시작 실패 시 에러 처리
+                    // Error_Proc(1);
+                }
+                break;
+                // ----------------------
+            case TEST_STEP_CLIENT_REQUEST:
+                Handle_IPD_and_Respond_7(); // 클라이언트 요청 처리
+                break;
+
+            case 22:
+                bootLoop = 0; // 부팅 루프 종료
+                break;
             
-            SD_Card_Log("SD Card Boot...\n");
-            
-            if (result == SD_OK)
-            {
-                SD_Card_Log("SD Card Booted Successfully!\n");
-                testMsg = "SD Card Booted Successfully!\n";
-                HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
-                step++; // 다음 단계로 이동
+            default:
+                break;
             }
-            else
-            {
-                SD_Card_Log("SD Card Boot Failed!\n");
-                SD_Card_Log("again...\n");
-                // SD 카드 부팅 실패 시 에러 처리
-                // Error_Handler();
-                // Error_Proc(1);
-            }
-            break;
-            // ----------------------
-        case 1:
-            result = ESP_AT_Boot(); // ESP32 AT 테스트
 
-            SD_Card_Log("ESP32 AT Boot...\n");
-
-            if (result == AT_OK)
-            {
-                SD_Card_Log("ESP32 AT Booted Successfully!\n");
-                testMsg = "ESP32 AT Booted Successfully!\n";
-                HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
-                step++; // 다음 단계로 이동
-            }
-            else
-            {
-                SD_Card_Log("ESP32 AT Boot Failed!\n");
-                SD_Card_Log("again...\n");
-                // ESP32 AT 부팅 실패 시 에러 처리
-                //Error_Handler();
-                // Error_Proc(1);
-            }
-            break;
-            // ----------------------
-        case 2:
-            // 와이파이 드라이버 초기화
-            result = ESP_AT_Send_Command_Sync_Get_int("AT+CWINIT=1\r\n");
-
-            SD_Card_Log("ESP32 WiFi Init...\n");
-
-            if (result == AT_OK)
-            {
-                SD_Card_Log("ESP32 WiFi Init Success!\n");
-                testMsg = "ESP32 WiFi Init Success!\n";
-                HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
-                step++; // 다음 단계로 이동
-            }
-            else
-            {
-                SD_Card_Log("ESP32 WiFi Init Failed!\n");
-                SD_Card_Log("again...\n");
-                // ESP32 WiFi 초기화 실패 시 에러 처리
-                // Error_Proc(1);
-            }
-            break;
-            // ----------------------
-        case 3:
-            // softAP 모드로 설정
-            result = ESP_AT_Send_Command_Sync_Get_int("AT+CWMODE=2\r\n");
-            SD_Card_Log("ESP32 Set SoftAP Mode...\n");
-            if (result == AT_OK)
-            {
-                SD_Card_Log("ESP32 Set SoftAP Mode Success!\n");
-                testMsg = "ESP32 Set SoftAP Mode Success!\n";
-                HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
-                step++; // 다음 단계로 이동
-            }
-            else
-            {
-                SD_Card_Log("ESP32 Set SoftAP Mode Failed!\n");
-                SD_Card_Log("again...\n");
-                // ESP32 SoftAP 모드 설정 실패 시 에러 처리
-                // Error_Proc(1);
-            }
-            break;
-            // ----------------------
-        case 4:
-            // AP SSID와 비밀번호 설정
-            result = ESP_AT_Send_Command_Sync_Get_int("AT+CWSAP=\"AMKIT_AP\",\"\",5,0\r\n");
-            SD_Card_Log("ESP32 Set SoftAP SSID and Password...\n");
-            if (result == AT_OK)
-            {
-                SD_Card_Log("ESP32 Set SoftAP SSID and Password Success!\n");
-                testMsg = "ESP32 Set SoftAP SSID and Password Success!\n";
-                HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
-                step++; // 다음 단계로 이동
-            }
-            else
-            {
-                SD_Card_Log("ESP32 Set SoftAP SSID and Password Failed!\n");
-                SD_Card_Log("again...\n");
-                // ESP32 SoftAP SSID와 비밀번호 설정 실패 시 에러 처리
-                // Error_Proc(1);
-            }
-            break;
-            // ----------------------
-        case 5:
-            // SoftAP DHCP 서버 활성화
-            result = ESP_AT_Send_Command_Sync_Get_int("AT+CWDHCP=1,2\r\n");
-            SD_Card_Log("ESP32 Enable SoftAP DHCP Server...\n");
-            if (result == AT_OK)
-            {
-                SD_Card_Log("ESP32 Enable SoftAP DHCP Server Success!\n");
-                testMsg = "ESP32 Enable SoftAP DHCP Server Success!\n";
-                HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
-                step++; // 다음 단계로 이동
-            }
-            else
-            {
-                SD_Card_Log("ESP32 Enable SoftAP DHCP Server Failed!\n");
-                SD_Card_Log("again...\n");
-                // ESP32 SoftAP DHCP 서버 활성화 실패 시 에러 처리
-                // Error_Proc(1);
-            }
-            break;
-            // ----------------------
-        case 6:
-        #if 0
-            // SoftAP IP 주소 조회
-            result = ESP_AT_Send_Command_Sync_Get_int("AT+CIPAP?\r\n");
-            SD_Card_Log("ESP32 Get SoftAP IP Address...\n");
-            if (result == AT_OK)
-            {
-                SD_Card_Log("ESP32 Get SoftAP IP Address Success!\n");
-                testMsg = "ESP32 Get SoftAP IP Address Success!\n";
-                HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
-                step++; // 다음 단계로 이동
-            }
-            else
-            {
-                SD_Card_Log("ESP32 Get SoftAP IP Address Failed!\n");
-                SD_Card_Log("again...\n");
-                // ESP32 SoftAP IP 주소 조회 실패 시 에러 처리
-                Error_Proc(1);
-            }
-        #else
-            // SoftAP IP 주소 설정
-            result = ESP_AT_Send_Command_Sync_Get_int("AT+CIPAP=\"192.168.4.1\",\"255.255.255.0\"\r\n");
-            SD_Card_Log("ESP32 Set SoftAP IP Address...\n");
-            if (result == AT_OK)
-            {
-                SD_Card_Log("ESP32 Set SoftAP IP Address Success!\n");
-                testMsg = "ESP32 Set SoftAP IP Address Success!\n";
-                HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
-                step++; // 다음 단계로 이동
-            }
-            else
-            {
-                SD_Card_Log("ESP32 Set SoftAP IP Address Failed!\n");
-                SD_Card_Log("again...\n");
-                // ESP32 SoftAP IP 주소 설정 실패 시 에러 처리
-                // Error_Proc(1);
-            }
-        #endif
-            break;
-            // ----------------------
-        case 7:
-            // 멀티플 커넥션 모드 설정
-            result = ESP_AT_Send_Command_Sync_Get_int("AT+CIPMUX=1\r\n");
-            SD_Card_Log("ESP32 Set Multiple Connection Mode...\n");
-            if (result == AT_OK)
-            {
-                SD_Card_Log("ESP32 Set Multiple Connection Mode Success!\n");
-                testMsg = "ESP32 Set Multiple Connection Mode Success!\n";
-                HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
-                step++; // 다음 단계로 이동
-            }
-            else
-            {
-                SD_Card_Log("ESP32 Set Multiple Connection Mode Failed!\n");
-                SD_Card_Log("again...\n");
-                // ESP32 멀티플 커넥션 모드 설정 실패 시 에러 처리
-                // Error_Proc(1);
-            }
-            break;
-            // ----------------------
-        case 8:
-            // HTTP 서버 시작
-            result = ESP_AT_Send_Command_Sync_Get_int("AT+CIPSERVER=1,80\r\n");
-            SD_Card_Log("ESP32 Start HTTP Server...\n");
-            if (result == AT_OK)
-            {
-                SD_Card_Log("ESP32 Start HTTP Server Success!\n");
-                testMsg = "ESP32 Start HTTP Server Success!\n";
-                HAL_UART_Transmit(&huart1, (uint8_t*)testMsg, strlen(testMsg), HAL_MAX_DELAY);
-                step++; // 다음 단계로 이동
-            }
-            else
-            {
-                SD_Card_Log("ESP32 Start HTTP Server Failed!\n");
-                SD_Card_Log("again...\n");
-                // ESP32 HTTP 서버 시작 실패 시 에러 처리
-                // Error_Proc(1);
-            }
-            break;
-            // ----------------------
-        case 9:
-            Handle_IPD_and_Respond_4(); // 클라이언트 요청 처리
-            break;
-
-        case 22:
-            bootLoop = 0; // 부팅 루프 종료
-            break;
-        
-        default:
-            break;
         }
+        
     }
     
 }
@@ -635,7 +918,14 @@ void Test_Proc(void)
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-
+//    _______ _____ __  __ ______ _____  
+//   |__   __|_   _|  \/  |  ____|  __ \ .
+//      | |    | | | \  / | |__  | |__) |
+//      | |    | | | |\/| |  __| |  _  / 
+//      | |   _| |_| |  | | |____| | \ \ .
+//      |_|  |_____|_|  |_|______|_|  \_\.
+//                                       
+// ─────────────────────────────────────────────────────────────────────────────
 
 void Timer_Interrupt_Proc(void)
 {

@@ -396,6 +396,220 @@ HAL_StatusTypeDef Save_Wifi_Status_FRAM_Dummy(void)
     return Memory_Write(WIFI_FLAG_ADDR, &flag, 1);
 }
 
+
+
+// =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+//     _____ _____ _____ _____              _____ ____  _   _ ______ _____ _____ 
+//    / ____/ ____|_   _|  __ \            / ____/ __ \| \ | |  ____|_   _/ ____|
+//   | (___| (___   | | | |  | |  ______  | |   | |  | |  \| | |__    | || |  __ 
+//    \___ \\___ \  | | | |  | | |______| | |   | |  | | . ` |  __|   | || | |_ |
+//    ____) |___) |_| |_| |__| |          | |___| |__| | |\  | |     _| || |__| |
+//   |_____/_____/|_____|_____/            \_____\____/|_| \_|_|    |_____\_____|
+//                                                                               
+// ==-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+// 와이파이 SSID 상태를 불러오는 함수
+// 이 함수는 WiFi SSID 플래그를 읽고, g_nWifi_SSID_Status를 업데이트합니다.
+HAL_StatusTypeDef Load_Wifi_SSID_Status_FRAM(void)
+{
+    uint8_t flag;
+
+    HAL_StatusTypeDef st = Memory_Read(WIFI_SSID_FLAG_ADDR, &flag, 1);
+
+    g_nWifi_SSID_Status = (flag==DEVICE_WIFI_SSID_SET)
+                    ? DEVICE_WIFI_SSID_SET
+                    : DEVICE_WIFI_SSID_NOT_SET;
+
+#if DEBUG_MODE
+    char timeStatusMsg[50];
+    snprintf(timeStatusMsg, sizeof(timeStatusMsg), "LOAD Wifi SSID Status: %d\n", flag);
+    HAL_UART_Transmit(&huart1, (uint8_t*)timeStatusMsg, strlen(timeStatusMsg), HAL_MAX_DELAY);
+#endif
+    return st;
+}
+
+// 와이파이 SSID 저장 함수
+HAL_StatusTypeDef Save_Wifi_SSID_FRAM(const char *ssid)
+{
+    PAT_WiFi_Info pWiFiInfo = AT_Get_WiFi_Info();
+
+    if (pWiFiInfo == NULL)
+    {
+        return HAL_ERROR; // WiFi 정보 구조체가 NULL인 경우
+    }
+
+    // ssid가 NULL이거나 길이가 64바이트를 초과하거나 빈 문자열인 경우
+    if (ssid == NULL || strlen(ssid) + 1 > sizeof(pWiFiInfo->ssid) || *ssid == '\0')
+    {
+        return HAL_ERROR; // 잘못된 파라미터
+    }
+
+    uint8_t flag = DEVICE_WIFI_SSID_SET; // SSID가 설정됨을 나타내는 플래그
+
+    // WiFi SSID 플래그 저장
+    HAL_StatusTypeDef st = Memory_Write(WIFI_SSID_FLAG_ADDR, &flag, 1);
+    if (st != HAL_OK)
+    {
+        return st; // 플래그 저장 실패
+    }
+
+    uint16_t len = (uint16_t)(strlen(ssid) + 1); // 문자열 길이 + NULL 문자
+
+    // WiFi SSID 데이터 저장
+    st = Memory_Write(WIFI_SSID_ADDR, (const uint8_t*)ssid, len);
+
+    return st;
+}
+
+// 와이파이 SSID 읽기 함수
+HAL_StatusTypeDef Load_Wifi_SSID_FRAM(void)
+{
+    // WiFi 정보를 저장하는 구조체를 가져옴
+    PAT_WiFi_Info pWiFiInfo = AT_Get_WiFi_Info();
+    if (pWiFiInfo == NULL)
+    {
+        return HAL_ERROR; // WiFi 정보 구조체가 NULL인 경우
+    }
+
+    uint8_t flag;
+    HAL_StatusTypeDef st = Memory_Read(WIFI_SSID_FLAG_ADDR, &flag, 1);
+    if (st != HAL_OK)
+    {
+        return st; // 플래그 읽기 실패
+    }
+
+    if (flag == DEVICE_WIFI_SSID_SET)
+    {
+        // SSID가 설정되어 있으면 SSID 데이터를 읽음
+        st = Memory_Read(WIFI_SSID_ADDR, (uint8_t*)pWiFiInfo->ssid, sizeof(pWiFiInfo->ssid) - 1);
+        if (st == HAL_OK)
+        {
+            pWiFiInfo->ssid[sizeof(pWiFiInfo->ssid) - 1] = '\0'; // 문자열 종료
+        }
+    }
+    else
+    {
+        // SSID가 설정되어 있지 않으면 빈 문자열로 초기화
+        pWiFiInfo->ssid[0] = '\0';
+    }
+
+    // WiFi SSID 상태를 업데이트
+    g_nWifi_SSID_Status = (flag == DEVICE_WIFI_SSID_SET) ? DEVICE_WIFI_SSID_SET : DEVICE_WIFI_SSID_NOT_SET;
+
+#if DEBUG_MODE
+    // 로드된 WiFi SSID 상태를 uart1로 출력
+    char ssidStatusMsg[50];
+    snprintf(ssidStatusMsg, sizeof(ssidStatusMsg), "LOAD Wifi SSID Status: %d\n", g_nWifi_SSID_Status);
+    HAL_UART_Transmit(&huart1, (uint8_t*)ssidStatusMsg, strlen(ssidStatusMsg), HAL_MAX_DELAY);
+#endif
+    return st;
+}
+
+
+// =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+//    _______          __        _____ ____  _   _ ______ _____ _____ 
+//   |  __ \ \        / /       / ____/ __ \| \ | |  ____|_   _/ ____|
+//   | |__) \ \  /\  / /_____  | |   | |  | |  \| | |__    | || |  __ 
+//   |  ___/ \ \/  \/ /______| | |   | |  | | . ` |  __|   | || | |_ |
+//   | |      \  /\  /         | |___| |__| | |\  | |     _| || |__| |
+//   |_|       \/  \/           \_____\____/|_| \_|_|    |_____\_____|
+//                                                                    
+// =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
+// 와이파이 PW 상태를 불러오는 함수
+// 이 함수는 WiFi 비밀번호 플래그를 읽고, g_nWifi_Password_Status를 업데이트합니다.
+HAL_StatusTypeDef Load_Wifi_Password_Status_FRAM(void)
+{
+    uint8_t flag;
+
+    HAL_StatusTypeDef st = Memory_Read(WIFI_PASSWORD_FLAG_ADDR, &flag, 1);
+
+    g_nWifi_Password_Status = (flag==DEVICE_WIFI_PASSWORD_SET)
+                    ? DEVICE_WIFI_PASSWORD_SET
+                    : DEVICE_WIFI_PASSWORD_NOT_SET;
+#if DEBUG_MODE
+    char timeStatusMsg[50];
+    snprintf(timeStatusMsg, sizeof(timeStatusMsg), "LOAD Wifi Password Status: %d\n", g_nWifi_Password_Status);
+    HAL_UART_Transmit(&huart1, (uint8_t*)timeStatusMsg, strlen(timeStatusMsg), HAL_MAX_DELAY);
+#endif
+    return st;
+}
+
+// 와이파이 PW 저장 함수
+HAL_StatusTypeDef Save_Wifi_Password_FRAM(const char *password)
+{
+    PAT_WiFi_Info pWiFiInfo = AT_Get_WiFi_Info();
+
+    if (pWiFiInfo == NULL)
+    {
+        return HAL_ERROR; // WiFi 정보 구조체가 NULL인 경우
+    }
+
+    // ssid가 NULL이거나 길이가 64바이트를 초과하거나 빈 문자열인 경우
+    if (password == NULL || strlen(password) + 1 > sizeof(pWiFiInfo->password) || *password == '\0')
+    {
+        return HAL_ERROR; // 잘못된 파라미터
+    }
+
+    uint8_t flag = DEVICE_WIFI_PASSWORD_SET; // 비밀번호가 설정됨을 나타내는 플래그
+
+    // WiFi 비밀번호 플래그 저장
+    HAL_StatusTypeDef st = Memory_Write(WIFI_PASSWORD_FLAG_ADDR, &flag, 1);
+    if (st != HAL_OK)
+    {
+        return st; // 플래그 저장 실패
+    }
+
+    uint16_t len = (uint16_t)(strlen(password) + 1); // 문자열 길이 + NULL 문자
+
+    // WiFi 비밀번호 데이터 저장
+    st = Memory_Write(WIFI_PASSWORD_ADDR, (const uint8_t*)password, len);
+
+    return st;
+}
+
+// 와이파이 PW 읽기 함수
+HAL_StatusTypeDef Load_Wifi_Password_FRAM(void)
+{
+    // WiFi 정보를 저장하는 구조체를 가져옴
+    PAT_WiFi_Info pWiFiInfo = AT_Get_WiFi_Info();
+    if (pWiFiInfo == NULL)
+    {
+        return HAL_ERROR; // WiFi 정보 구조체가 NULL인 경우
+    }
+
+    uint8_t flag;
+    HAL_StatusTypeDef st = Memory_Read(WIFI_PASSWORD_FLAG_ADDR, &flag, 1);
+    if (st != HAL_OK)
+    {
+        return st; // 플래그 읽기 실패
+    }
+
+    if (flag == DEVICE_WIFI_PASSWORD_SET)
+    {
+        // 비밀번호가 설정되어 있으면 비밀번호 데이터를 읽음
+        st = Memory_Read(WIFI_PASSWORD_ADDR, (uint8_t*)pWiFiInfo->password, sizeof(pWiFiInfo->password) - 1);
+        if (st == HAL_OK)
+        {
+            pWiFiInfo->password[sizeof(pWiFiInfo->password) - 1] = '\0'; // 문자열 종료
+        }
+    }
+    else
+    {
+        // 비밀번호가 설정되어 있지 않으면 빈 문자열로 초기화
+        pWiFiInfo->password[0] = '\0';
+    }
+
+    // WiFi 비밀번호 상태를 업데이트
+    g_nWifi_Password_Status = (flag == DEVICE_WIFI_PASSWORD_SET) ? DEVICE_WIFI_PASSWORD_SET : DEVICE_WIFI_PASSWORD_NOT_SET;
+
+#if DEBUG_MODE
+    // 로드된 WiFi 비밀번호 상태를 uart1로 출력
+    char passwordStatusMsg[50];
+    snprintf(passwordStatusMsg, sizeof(passwordStatusMsg), "LOAD Wifi Password Status: %d\n", g_nWifi_Password_Status);
+    HAL_UART_Transmit(&huart1, (uint8_t*)passwordStatusMsg, strlen(passwordStatusMsg), HAL_MAX_DELAY);
+#endif
+    return st;
+}
+
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 //    _______ ____  _  ________ _   _        _____ _______      _    _  _____ 
 //   |__   __/ __ \| |/ /  ____| \ | |      / ____|__   __|/\  | |  | |/ ____|

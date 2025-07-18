@@ -34,6 +34,18 @@ enum Device_Wifi_Status
     DEVICE_WIFI_ERROR              // 와이파이 오류
 };
 
+enum Device_SSID_Status
+{
+    DEVICE_WIFI_SSID_NOT_SET = 0, // 와이파이 SSID 미설정
+    DEVICE_WIFI_SSID_SET           // 와이파이 SSID 설정됨
+};
+
+enum Device_Password_Status
+{
+    DEVICE_WIFI_PASSWORD_NOT_SET = 0, // 와이파이 비밀번호 미설정
+    DEVICE_WIFI_PASSWORD_SET           // 와이파이 비밀번호 설정됨
+};
+
 enum Device_Time_Status
 {
     DEVICE_TIME_NOT_SYNCED = 0, // 시간 미동기화

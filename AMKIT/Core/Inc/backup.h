@@ -60,6 +60,18 @@
 // MAC 주소가 있는지 확인하는 플래그
 #define MAC_FLAG_ADDR       (TOKEN_ADDR + TOKEN_MAX_LEN)  // 0x0011 + 128 = 0x0091 // MAC 플래그 저장 위치
 #define MAC_ADDR            (MAC_FLAG_ADDR + 1)  // 0x0092 // MAC 주소 저장 위치
+// MAC 주소 최대 길이 6바이트
+#define MAC_MAX_LEN         6
+
+// WiFi SSID 가 있는지 확인하는 플래그
+#define WIFI_SSID_FLAG_ADDR (MAC_ADDR + MAC_MAX_LEN)  // 0x0092 + 6 = 0x0098 // WiFi SSID 플래그 저장 위치
+#define WIFI_SSID_ADDR      (WIFI_SSID_FLAG_ADDR + 1)  // 0x0099 // WiFi SSID 저장 위치
+// WiFi SSID 최대 길이 64바이트 널 종료 포함
+
+// WiFi 비밀번호가 있는지 확인하는 플래그
+#define WIFI_PASSWORD_FLAG_ADDR (WIFI_SSID_ADDR + 64)  // 0x0099 + 64 = 0x00B9 // WiFi 비밀번호 플래그 저장 위치
+#define WIFI_PASSWORD_ADDR  (WIFI_PASSWORD_FLAG_ADDR + 1)  // 0x00BA // WiFi 비밀번호 저장 위치
+// WiFi 비밀번호 최대 길이 64바이트 널 종료 포함
 
 // =-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=
 
@@ -94,6 +106,16 @@ HAL_StatusTypeDef Save_TimeStatus_FRAM_Dummy(void);
 HAL_StatusTypeDef Load_Wifi_Status_FRAM(void);
 HAL_StatusTypeDef Save_Wifi_Status_FRAM(void);
 HAL_StatusTypeDef Save_Wifi_Status_FRAM_Dummy(void);
+
+// 와이파이 SSID 함수
+HAL_StatusTypeDef Load_Wifi_SSID_Status_FRAM(void);
+HAL_StatusTypeDef Save_Wifi_SSID_FRAM(const char *ssid);
+HAL_StatusTypeDef Load_Wifi_SSID_FRAM(void);
+
+// 와이파이 비밀번호 함수
+HAL_StatusTypeDef Load_Wifi_Password_Status_FRAM(void);
+HAL_StatusTypeDef Save_Wifi_Password_FRAM(const char *password);
+HAL_StatusTypeDef Load_Wifi_Password_FRAM(void);
 
 // 토큰 함수
 HAL_StatusTypeDef Load_Token_Status_FRAM(void);

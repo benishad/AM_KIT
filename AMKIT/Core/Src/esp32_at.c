@@ -21,7 +21,7 @@
 
 
 
-#define RESP_BUF_SIZE   1024    // 응답 버퍼 크기
+#define RESP_BUF_SIZE   2048    // 응답 버퍼 크기
 #define BYTE_RX_TIMEOUT 300     // 한 바이트 최대 대기(ms)
 #define OVERALL_TIMEOUT 20000   // 전체 응답 최대 대기(ms)
 #define POST_OK_TIMEOUT 500     // OK 이후 유예 대기(ms)
@@ -52,6 +52,7 @@ int     skipEcho = 0; // 마지막 명령어가 전송되었는지 여부
 // =========================================================
 
 __CCMRAM__ AT_UTC_Time g_atUtcTime;
+__CCMRAM__ AT_WiFi_Info g_atWiFiInfo;
 
 PAT_UTC_Time AT_Get_UTC_Time(void)
 {
@@ -59,10 +60,22 @@ PAT_UTC_Time AT_Get_UTC_Time(void)
     return &g_atUtcTime;
 }
 
+PAT_WiFi_Info AT_Get_WiFi_Info(void)
+{
+    // 현재 WiFi 정보를 반환
+    return &g_atWiFiInfo;
+}
+
 // CCMRAM 초기화
 void UTC_Time_Init(void)
 {
     memset(&g_atUtcTime, 0, sizeof(g_atUtcTime));
+}
+
+void WiFi_Info_Init(void)
+{
+    // WiFi 정보 구조체 초기화
+    memset(&g_atWiFiInfo, 0, sizeof(g_atWiFiInfo));
 }
 
 // =========================================================
@@ -2089,13 +2102,22 @@ void Handle_IPD_and_Respond_4(void)
     int      hdrPos, payPos;
     uint32_t start;
     char     respHdr[128];
-    int      hdrLen, bodyLen;
+    int      hdrLen;
     char     cmd[64];
     int      cmdLen, match;
-    int      isLed=0, isIcon=0;
+    int      isLed=0, isIcon=0, isScan=0;
+
+    // htmlBody_inline_2 를 담는 변수 설정, body = htmlBody_inline_2 형식
+    const char* body = htmlBody_inline_2;
+    // htmlBody_inline_2Len
+    int bodyLen = htmlBody_inline_2Len;
 
     while (1)
     {
+        isLed = 0;
+        isIcon = 0;
+        isScan = 0;
+
         IPD_START:
         // — 1) "+IPD" 헤더 수집 ("+IPD,<linkID>,<len>:" 형태)
         hdrPos = 0;
@@ -2159,7 +2181,11 @@ void Handle_IPD_and_Respond_4(void)
         char method[8] = {0}, url[128] = {0};
         if (sscanf(payload, "%7s %127s", method, url) == 2)
         {
-            if (strcmp(url, "/led") == 0)
+            if (strcmp(url, "/scan") == 0)
+            {
+                isScan = 1;
+            }
+            else if (strcmp(url, "/led") == 0)
             {
                 isLed = 1;
             }
@@ -2173,6 +2199,62 @@ void Handle_IPD_and_Respond_4(void)
         // -------------------------------------
 
         // — 5) 응답 헤더 + 바디 길이 결정
+        if (isScan)
+        {
+            // 현재 구문에 들어왔는지 확인
+            // uart1에 표시
+            HAL_UART_Transmit(&huart1, (uint8_t*)"Handle_IPD_and_Respond_4: isScan\r\n", 36, HAL_MAX_DELAY);
+
+            // 1) 스캔 명령, 연결 가능한 wifi 목록을 요청
+            ESP_AT_Send_Command_Sync("AT+CWLAP\r\n");
+            
+            
+            // 2) CWLAP URC 파싱
+            char wifiListHtml[512] = {0};
+            int  wlPos = 0;
+            char lineBuf[128];
+            while (readLineFromUart2(lineBuf, sizeof(lineBuf)))
+            {
+                if (strncmp(lineBuf, "+CWLAP:", 7) == 0)
+                {
+                    char ssid[64]; int rssi;
+                    if (sscanf(lineBuf, "+CWLAP:(%*d,\"%63[^\"]\",%d", ssid, &rssi) == 2)
+                    {
+                        wlPos += snprintf(wifiListHtml + wlPos,
+                                        sizeof(wifiListHtml) - wlPos,
+                                        "<li>%s (%ddBm)</li>",
+                                        ssid, rssi);
+                    }
+                }
+                if (strstr(lineBuf, "OK"))
+                {
+                    break;
+                }
+            }
+            if (wlPos == 0)
+            {
+                snprintf(wifiListHtml, sizeof(wifiListHtml),
+                        "<li>No networks found</li>");
+            }
+
+            // 3) 스캔 결과 전송
+            char *scanHdr =
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/html\r\n"
+                "Connection: close\r\n"
+                "\r\n";
+            HAL_UART_Transmit(&huart2, (uint8_t*)scanHdr, strlen(scanHdr), HAL_MAX_DELAY);
+            HAL_UART_Transmit(&huart2, (uint8_t*)wifiListHtml, strlen(wifiListHtml), HAL_MAX_DELAY);
+
+            // 4) 연결 닫기
+            char closeCmd[32];
+            int  closeLen = snprintf(closeCmd, sizeof(closeCmd),
+                                    "AT+CIPCLOSE=%hu\r\n", linkID);
+            ESP_AT_Send_Command_Sync_Get_Result(closeCmd);
+
+            // 다음 요청 대기
+            continue;
+        }
         if (isIcon)
         {
             bodyLen = 0;
@@ -2183,7 +2265,7 @@ void Handle_IPD_and_Respond_4(void)
         }
         else
         {
-            bodyLen = htmlBody_inline_2Len;
+            // bodyLen = htmlBody_inline_2Len; // 위에서 정의함
             hdrLen = snprintf(respHdr, sizeof(respHdr),
                 "HTTP/1.1 200 OK\r\n"
                 "Content-Type: text/html; charset=utf-8\r\n"
@@ -2239,7 +2321,9 @@ void Handle_IPD_and_Respond_4(void)
         // HAL_UART_Transmit(&huart1, (uint8_t*)respHdr, hdrLen, HAL_MAX_DELAY);
         if (!isIcon)
         {
-            HAL_UART_Transmit(&huart2, (uint8_t*)htmlBody_inline_2, htmlBody_inline_2Len, HAL_MAX_DELAY);
+            // HAL_UART_Transmit(&huart2, (uint8_t*)htmlBody_inline_2, htmlBody_inline_2Len, HAL_MAX_DELAY);
+            // 위에서 정의한 body 변수를 사용
+            HAL_UART_Transmit(&huart2, (uint8_t*)body, bodyLen, HAL_MAX_DELAY);
         }
 
         // -------------------------------------
@@ -2274,4 +2358,1044 @@ void Handle_IPD_and_Respond_4(void)
         ESP_AT_Send_Command_Sync_Get_Result(cmd);
         break; // HTML 응답 후 루프 종료
     }
+}
+
+
+
+
+
+void Handle_IPD_and_Respond_5(void)
+{
+    uint8_t  ch;
+    char     ipdHdr[IPD_HDR_MAX];
+    char     payload[PAYLOAD_MAX];
+    uint16_t linkID, dataLen;
+    int      hdrPos, payPos;
+    uint32_t start;
+    char     respHdr[128];
+    int      hdrLen;
+    char     cmd[64];
+    int      cmdLen, match;
+    int      isLed=0, isIcon=0, isScan=0;
+
+    // htmlBody_inline_2 를 담는 변수 설정, body = htmlBody_inline_2 형식
+    const char* body = htmlBody_inline_2;
+    // htmlBody_inline_2Len
+    int bodyLen = htmlBody_inline_2Len;
+
+    while (1)
+    {
+        isLed = 0;
+        isIcon = 0;
+        isScan = 0;
+
+        IPD_START:
+        // — 1) "+IPD" 헤더 수집 ("+IPD,<linkID>,<len>:" 형태)
+        hdrPos = 0;
+        // '+' 문자 대기
+        do {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                // return;
+                goto IPD_START; // 재시도
+            }
+        } while (ch != '+');
+        ipdHdr[hdrPos++] = '+';
+
+        // ':'까지 읽기
+        while (hdrPos < IPD_HDR_MAX - 1)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                // return;
+                goto IPD_START; // 재시도
+            }
+            ipdHdr[hdrPos++] = ch;
+            if (ch == ':')
+            {
+                break;
+            }
+        }
+        ipdHdr[hdrPos] = '\0';
+
+        // -------------------------------------
+
+        // — 2) linkID, dataLen 파싱
+        if (sscanf(ipdHdr, "+IPD,%hu,%hu:", &linkID, &dataLen) != 2)
+        {
+            // return;
+            goto IPD_START; // 재시도
+        }
+
+        // -------------------------------------
+
+        // — 3) payload 읽기 (최대 PAYLOAD_MAX-1 바이트)
+        payPos = 0;
+        for (uint16_t i = 0; i < dataLen; ++i)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                // return;
+                goto IPD_START; // 재시도
+            }
+            if (payPos < PAYLOAD_MAX - 1)
+            {
+                payload[payPos++] = ch;
+            }
+        }
+        payload[payPos] = '\0';
+
+        // -------------------------------------
+
+        // — 4) GET 라인에서 URL 추출
+        //    예: "GET /style.css HTTP/1.1"
+        char method[8] = {0}, url[128] = {0};
+        if (sscanf(payload, "%7s %127s", method, url) == 2)
+        {
+            if (strcmp(url, "/scan") == 0)
+            {
+                isScan = 1;
+            }
+            else if (strcmp(url, "/led") == 0)
+            {
+                isLed = 1;
+            }
+            else if (strcmp(url, "/favicon.ico") == 0 || strstr(url, "apple-touch-icon") != NULL)
+            {
+                isIcon = 1;
+            }
+            
+        }
+
+        // -------------------------------------
+
+        // — 5) 응답 헤더 + 바디 길이 결정
+        if (isScan)
+        {
+            // 현재 구문에 들어왔는지 확인
+            // uart1에 표시
+            HAL_UART_Transmit(&huart1, (uint8_t*)"Handle_IPD_and_Respond_4: isScan\r\n", 36, HAL_MAX_DELAY);
+
+            // 1) 스캔 명령, 연결 가능한 wifi 목록을 요청
+            ESP_AT_Send_Command_Sync_Get_Result("AT+CWLAP\r\n");
+            
+            
+            // 2) CWLAP URC 파싱
+            char wifiListHtml[1024] = {0};
+            int  wlPos = 0;
+            char lineBuf[256];
+            while (readLineFromUart2(lineBuf, sizeof(lineBuf)))
+            {
+                if (strncmp(lineBuf, "+CWLAP:", 7) == 0)
+                {
+                    char ssid[64]; int rssi;
+                    if (sscanf(lineBuf, "+CWLAP:(%*d,\"%63[^\"]\",%d", ssid, &rssi) == 2)
+                    {
+                        wlPos += snprintf(wifiListHtml + wlPos,
+                                        sizeof(wifiListHtml) - wlPos,
+                                        "<li>%s (%ddBm)</li>",
+                                        ssid, rssi);
+                    }
+                }
+                if (strstr(lineBuf, "OK"))
+                {
+                    break;
+                }
+            }
+            if (wlPos == 0)
+            {
+                snprintf(wifiListHtml, sizeof(wifiListHtml),
+                        "<li>No networks found</li>");
+            }
+
+            // 3) 스캔 결과 전송
+            char scanHdr[128];
+            int  hdrLen = snprintf(scanHdr, sizeof(scanHdr),
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/html; charset=utf-8\r\n"
+                "Content-Length: %d\r\n"
+                "Connection: close\r\n"
+                "\r\n",
+                (int)strlen(wifiListHtml));
+
+            /* 3) AT+CIPSEND=<linkID>,<totalLen> */
+            int totalLen = hdrLen + strlen(wifiListHtml);
+            char cmd[32];
+            int  cmdLen = snprintf(cmd, sizeof(cmd),
+                                "AT+CIPSEND=%hu,%d\r\n", linkID, totalLen);
+
+            HAL_UART_Transmit(&huart2, (uint8_t*)cmd, cmdLen, HAL_MAX_DELAY);
+
+            // '>' 프롬프트 대기
+            uint8_t ch;  
+            uint32_t start = HAL_GetTick();
+            while (HAL_GetTick() - start < RX_TIMEOUT)
+            {
+                if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK && ch == '>')
+                    break;
+            }
+            
+            // 헤더 + 바디 전송
+            HAL_UART_Transmit(&huart2, (uint8_t*)scanHdr, strlen(scanHdr), HAL_MAX_DELAY);
+            HAL_UART_Transmit(&huart2, (uint8_t*)wifiListHtml, strlen(wifiListHtml), HAL_MAX_DELAY);
+
+            // OK 프롬프트 대기
+            const char sendOk[] = "SEND OK";
+            match = 0;
+            start = HAL_GetTick();
+            while (HAL_GetTick() - start < SEND_TIMEOUT)
+            {
+                if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK)
+                {
+                    if (ch == sendOk[match])
+                    {
+                        if (++match == (int)strlen(sendOk))
+                        {
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        match = 0;
+                    }
+                }
+            }
+
+            // 4) 연결 닫기
+            char closeCmd[32];
+            int  closeLen = snprintf(closeCmd, sizeof(closeCmd),
+                                    "AT+CIPCLOSE=%hu\r\n", linkID);
+            ESP_AT_Send_Command_Sync_Get_Result(closeCmd);
+
+            // 다음 요청 대기
+            continue;
+        }
+
+        if (isIcon)
+        {
+            bodyLen = 0;
+            hdrLen = snprintf(respHdr, sizeof(respHdr),
+                "HTTP/1.1 204 No Content\r\n"
+                "Connection: close\r\n"
+                "\r\n");
+        }
+        else
+        {
+            // bodyLen = htmlBody_inline_2Len; // 위에서 정의함
+            hdrLen = snprintf(respHdr, sizeof(respHdr),
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/html; charset=utf-8\r\n"
+                "Content-Length: %d\r\n"
+                "Connection: close\r\n"
+                "\r\n",
+                bodyLen);
+        }
+        if (hdrLen < 0 || hdrLen >= (int)sizeof(respHdr))
+        {
+            // return;
+            goto IPD_START; // 재시도
+        }
+
+        // 만약 /quit 요청이면 STM32 쪽으로 UART1 신호 전송
+        if (isLed)
+        {
+            const char stmMsg[] = "JS+LED\r\n";
+            // HAL_UART_Transmit(&huart1, (uint8_t*)stmMsg, strlen(stmMsg), HAL_MAX_DELAY);
+            // 인터럽트로 전송
+            HAL_UART_Transmit_IT(&huart1, (uint8_t*)stmMsg, strlen(stmMsg));
+            RX_LED_Toggle();
+        }
+
+        // -------------------------------------
+
+        // — 6) AT+CIPSEND=<linkID>,<hdrLen+bodyLen>
+        cmdLen = snprintf(cmd, sizeof(cmd), "AT+CIPSEND=%hu,%d\r\n",
+                        linkID, hdrLen + bodyLen);
+        if (cmdLen < 0 || cmdLen >= (int)sizeof(cmd))
+        {
+            return;
+        }
+
+        HAL_UART_Transmit(&huart2, (uint8_t*)cmd, cmdLen, HAL_MAX_DELAY);
+
+        // -------------------------------------
+
+        // — 7) '>' 프롬프트 대기
+        start = HAL_GetTick();
+        do {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK &&
+                ch == '>')
+            {
+                break;
+            }
+        } while (HAL_GetTick() - start < RX_TIMEOUT);
+
+        // -------------------------------------
+
+        // — 8) 헤더/바디 전송
+        HAL_UART_Transmit(&huart2, (uint8_t*)respHdr, hdrLen, HAL_MAX_DELAY);
+        // HAL_UART_Transmit(&huart1, (uint8_t*)respHdr, hdrLen, HAL_MAX_DELAY);
+        if (!isIcon)
+        {
+            // HAL_UART_Transmit(&huart2, (uint8_t*)htmlBody_inline_2, htmlBody_inline_2Len, HAL_MAX_DELAY);
+            // 위에서 정의한 body 변수를 사용
+            HAL_UART_Transmit(&huart2, (uint8_t*)body, bodyLen, HAL_MAX_DELAY);
+        }
+
+        // -------------------------------------
+
+        // — 9) "SEND OK" URC 대기
+        const char sendOk[] = "SEND OK";
+        match = 0;
+        start = HAL_GetTick();
+        while (HAL_GetTick() - start < SEND_TIMEOUT)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK)
+            {
+                if (ch == sendOk[match])
+                {
+                    if (++match == (int)strlen(sendOk))
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    match = 0;
+                }
+            }
+        }
+
+        // -------------------------------------
+
+        // — 10) 연결 종료
+        // HAL_Delay(50);
+        cmdLen = snprintf(cmd, sizeof(cmd), "AT+CIPCLOSE=%hu\r\n", linkID);
+        ESP_AT_Send_Command_Sync_Get_Result(cmd);
+        break; // HTML 응답 후 루프 종료
+    }
+}
+
+
+
+
+
+void Handle_IPD_and_Respond_6(void)
+{
+    uint8_t  ch;
+    char     ipdHdr[IPD_HDR_MAX];
+    char     payload[PAYLOAD_MAX];
+    uint16_t linkID, dataLen;
+    int      hdrPos, payPos;
+    uint32_t start;
+    char     respHdr[128];
+    int      hdrLen;
+    char     cmd[64];
+    int      cmdLen, match;
+    int      isLed=0, isIcon=0, isScan=0;
+
+    const char sendOk[] = "SEND OK";
+
+    // htmlBody_inline_2 를 담는 변수 설정, body = htmlBody_inline_2 형식
+    const char* body = htmlBody_inline_3;
+    // htmlBody_inline_3Len
+    int bodyLen = htmlBody_inline_3Len;
+
+    while (1)
+    {
+        isLed = 0;
+        isIcon = 0;
+        isScan = 0;
+
+        IPD_START:
+        // — 1) "+IPD" 헤더 수집 ("+IPD,<linkID>,<len>:" 형태)
+        hdrPos = 0;
+        // '+' 문자 대기
+        do {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                // return;
+                goto IPD_START; // 재시도
+            }
+        } while (ch != '+');
+        ipdHdr[hdrPos++] = '+';
+
+        // ':'까지 읽기
+        while (hdrPos < IPD_HDR_MAX - 1)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                // return;
+                goto IPD_START; // 재시도
+            }
+            ipdHdr[hdrPos++] = ch;
+            if (ch == ':')
+            {
+                break;
+            }
+        }
+        ipdHdr[hdrPos] = '\0';
+
+        // -------------------------------------
+
+        // — 2) linkID, dataLen 파싱
+        if (sscanf(ipdHdr, "+IPD,%hu,%hu:", &linkID, &dataLen) != 2)
+        {
+            // return;
+            goto IPD_START; // 재시도
+        }
+
+        // -------------------------------------
+
+        // — 3) payload 읽기 (최대 PAYLOAD_MAX-1 바이트)
+        payPos = 0;
+        for (uint16_t i = 0; i < dataLen; ++i)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                // return;
+                goto IPD_START; // 재시도
+            }
+            if (payPos < PAYLOAD_MAX - 1)
+            {
+                payload[payPos++] = ch;
+            }
+        }
+        payload[payPos] = '\0';
+
+        // -------------------------------------
+
+        // — 4) GET 라인에서 URL 추출
+        //    예: "GET /style.css HTTP/1.1"
+        char method[8] = {0}, url[128] = {0};
+        if (sscanf(payload, "%7s %127s", method, url) == 2)
+        {
+            if (strcmp(url, "/scan") == 0)
+            {
+                isScan = 1;
+            }
+            else if (strcmp(url, "/led") == 0)
+            {
+                isLed = 1;
+            }
+            else if (strcmp(url, "/favicon.ico") == 0 || strstr(url, "apple-touch-icon") != NULL)
+            {
+                isIcon = 1;
+            }
+            
+        }
+
+        // -------------------------------------
+
+        // — 5) 응답 헤더 + 바디 길이 결정
+        if (isScan)
+        {
+            const char *html = g_nWifiListReady ? g_cWifiListHtml
+                                       : "<li>Scanning…</li>";
+
+            char hdr[128];
+            hdrLen = snprintf(hdr, sizeof(hdr),
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/html; charset=utf-8\r\n"
+                "Content-Length: %d\r\n"
+                "Connection: close\r\n\r\n",
+                (int)strlen(html));
+
+            int total = hdrLen + strlen(html);
+            snprintf(cmd, sizeof(cmd),
+                    "AT+CIPSEND=%hu,%d\r\n", linkID, total);
+
+            HAL_UART_Transmit(&huart2,(uint8_t*)cmd,strlen(cmd),HAL_MAX_DELAY);
+            // '>' 프롬프트 대기
+            start = HAL_GetTick();
+            do {
+                if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK &&
+                    ch == '>')
+                {
+                    break;
+                }
+            } while (HAL_GetTick() - start < RX_TIMEOUT);
+
+            HAL_UART_Transmit(&huart2,(uint8_t*)hdr, hdrLen, HAL_MAX_DELAY);
+            HAL_UART_Transmit(&huart2,(uint8_t*)html, strlen(html), HAL_MAX_DELAY);
+
+            // "SEND OK" URC 대기
+            match = 0;
+            start = HAL_GetTick();
+            while (HAL_GetTick() - start < SEND_TIMEOUT)
+            {
+                if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK)
+                {
+                    if (ch == sendOk[match])
+                    {
+                        if (++match == (int)strlen(sendOk))
+                        {
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        match = 0;
+                    }
+                }
+            }
+
+            // 연결 종료
+            snprintf(cmd, sizeof(cmd), "AT+CIPCLOSE=%hu\r\n", linkID);
+            ESP_AT_Send_Command_Sync_Get_Result(cmd);
+            // 다음 요청 대기
+            continue;
+        }
+
+        if (isIcon)
+        {
+            bodyLen = 0;
+            hdrLen = snprintf(respHdr, sizeof(respHdr),
+                "HTTP/1.1 204 No Content\r\n"
+                "Connection: close\r\n"
+                "\r\n");
+        }
+        else
+        {
+            // bodyLen = htmlBody_inline_2Len; // 위에서 정의함
+            hdrLen = snprintf(respHdr, sizeof(respHdr),
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/html; charset=utf-8\r\n"
+                "Content-Length: %d\r\n"
+                "Connection: close\r\n"
+                "\r\n",
+                bodyLen);
+        }
+        if (hdrLen < 0 || hdrLen >= (int)sizeof(respHdr))
+        {
+            // return;
+            goto IPD_START; // 재시도
+        }
+
+        // 만약 /quit 요청이면 STM32 쪽으로 UART1 신호 전송
+        if (isLed)
+        {
+            const char stmMsg[] = "JS+LED\r\n";
+            // HAL_UART_Transmit(&huart1, (uint8_t*)stmMsg, strlen(stmMsg), HAL_MAX_DELAY);
+            // 인터럽트로 전송
+            HAL_UART_Transmit_IT(&huart1, (uint8_t*)stmMsg, strlen(stmMsg));
+            RX_LED_Toggle();
+        }
+
+        // -------------------------------------
+
+        // — 6) AT+CIPSEND=<linkID>,<hdrLen+bodyLen>
+        cmdLen = snprintf(cmd, sizeof(cmd), "AT+CIPSEND=%hu,%d\r\n",
+                        linkID, hdrLen + bodyLen);
+        if (cmdLen < 0 || cmdLen >= (int)sizeof(cmd))
+        {
+            return;
+        }
+
+        HAL_UART_Transmit(&huart2, (uint8_t*)cmd, cmdLen, HAL_MAX_DELAY);
+
+        // -------------------------------------
+
+        // — 7) '>' 프롬프트 대기
+        start = HAL_GetTick();
+        do {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK &&
+                ch == '>')
+            {
+                break;
+            }
+        } while (HAL_GetTick() - start < RX_TIMEOUT);
+
+        // -------------------------------------
+
+        // — 8) 헤더/바디 전송
+        HAL_UART_Transmit(&huart2, (uint8_t*)respHdr, hdrLen, HAL_MAX_DELAY);
+        // HAL_UART_Transmit(&huart1, (uint8_t*)respHdr, hdrLen, HAL_MAX_DELAY);
+        if (!isIcon)
+        {
+            // HAL_UART_Transmit(&huart2, (uint8_t*)htmlBody_inline_2, htmlBody_inline_2Len, HAL_MAX_DELAY);
+            // 위에서 정의한 body 변수를 사용
+            HAL_UART_Transmit(&huart2, (uint8_t*)body, bodyLen, HAL_MAX_DELAY);
+        }
+
+        // -------------------------------------
+
+        // — 9) "SEND OK" URC 대기
+        // const char sendOk[] = "SEND OK";
+        match = 0;
+        start = HAL_GetTick();
+        while (HAL_GetTick() - start < SEND_TIMEOUT)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK)
+            {
+                if (ch == sendOk[match])
+                {
+                    if (++match == (int)strlen(sendOk))
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    match = 0;
+                }
+            }
+        }
+
+        // -------------------------------------
+
+        // — 10) 연결 종료
+        // HAL_Delay(50);
+        cmdLen = snprintf(cmd, sizeof(cmd), "AT+CIPCLOSE=%hu\r\n", linkID);
+        ESP_AT_Send_Command_Sync_Get_Result(cmd);
+        break; // HTML 응답 후 루프 종료
+    }
+}
+
+
+
+
+
+// 라디오 박스 체크 와이파이 기능 추가
+void Handle_IPD_and_Respond_7(void)
+{
+    uint8_t  ch;
+    char     ipdHdr[IPD_HDR_MAX];
+    char     payload[PAYLOAD_MAX];
+    uint16_t linkID, dataLen;
+    int      hdrPos, payPos;
+    uint32_t start;
+    char     respHdr[128];
+    int      hdrLen;
+    char     cmd[64];
+    int      cmdLen, match;
+    int      isLed=0, isIcon=0, isScan=0, isConnect=0;
+
+    const char sendOk[] = "SEND OK";
+
+    // htmlBody_inline_4 를 담는 변수 설정, body = htmlBody_inline_4 형식
+    const char* body = htmlBody_inline_4;
+    // htmlBody_inline_4Len
+    int bodyLen = htmlBody_inline_4Len;
+
+    while (1)
+    {
+        isLed = 0;
+        isIcon = 0;
+        isScan = 0;
+        isConnect = 0;
+
+        IPD_START:
+        // — 1) "+IPD" 헤더 수집 ("+IPD,<linkID>,<len>:" 형태)
+        hdrPos = 0;
+        // '+' 문자 대기
+        do {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                // return;
+                goto IPD_START; // 재시도
+            }
+        } while (ch != '+');
+        ipdHdr[hdrPos++] = '+';
+
+        // ':'까지 읽기
+        while (hdrPos < IPD_HDR_MAX - 1)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                // return;
+                goto IPD_START; // 재시도
+            }
+            ipdHdr[hdrPos++] = ch;
+            if (ch == ':')
+            {
+                break;
+            }
+        }
+        ipdHdr[hdrPos] = '\0';
+
+        // -------------------------------------
+
+        // — 2) linkID, dataLen 파싱
+        if (sscanf(ipdHdr, "+IPD,%hu,%hu:", &linkID, &dataLen) != 2)
+        {
+            // return;
+            goto IPD_START; // 재시도
+        }
+
+        // -------------------------------------
+
+        // — 3) payload 읽기 (최대 PAYLOAD_MAX-1 바이트)
+        payPos = 0;
+        for (uint16_t i = 0; i < dataLen; ++i)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) != HAL_OK)
+            {
+                // return;
+                goto IPD_START; // 재시도
+            }
+            if (payPos < PAYLOAD_MAX - 1)
+            {
+                payload[payPos++] = ch;
+            }
+        }
+        payload[payPos] = '\0';
+
+        // -------------------------------------
+
+        // — 4) GET 라인에서 URL 추출
+        //    예: "GET /style.css HTTP/1.1"
+        char method[8] = {0}, url[128] = {0};
+        if (sscanf(payload, "%7s %127s", method, url) == 2)
+        {
+            if (strcmp(url, "/scan") == 0)
+            {
+                isScan = 1;
+            }
+            else if (strcmp(url, "/led") == 0)
+            {
+                isLed = 1;
+            }
+            else if (strcmp(url, "/favicon.ico") == 0 || strstr(url, "apple-touch-icon") != NULL)
+            {
+                isIcon = 1;
+            }
+            else if (strncmp(url, "/connect?", 9) == 0)
+            {
+                isConnect = 1;
+            }
+            
+        }
+
+        // -------------------------------------
+
+        // — 5) 응답 헤더 + 바디 길이 결정
+        if (isScan)
+        {
+            const char *html = g_nWifiListReady ? g_cWifiListHtml
+                                       : "<li>Scanning…</li>";
+
+            char hdr[128];
+            hdrLen = snprintf(hdr, sizeof(hdr),
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/html; charset=utf-8\r\n"
+                "Content-Length: %d\r\n"
+                "Connection: close\r\n\r\n",
+                (int)strlen(html));
+
+            int total = hdrLen + strlen(html);
+            snprintf(cmd, sizeof(cmd),
+                    "AT+CIPSEND=%hu,%d\r\n", linkID, total);
+
+            HAL_UART_Transmit(&huart2,(uint8_t*)cmd,strlen(cmd),HAL_MAX_DELAY);
+            // '>' 프롬프트 대기
+            start = HAL_GetTick();
+            do {
+                if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK &&
+                    ch == '>')
+                {
+                    break;
+                }
+            } while (HAL_GetTick() - start < RX_TIMEOUT);
+
+            HAL_UART_Transmit(&huart2,(uint8_t*)hdr, hdrLen, HAL_MAX_DELAY);
+            HAL_UART_Transmit(&huart2,(uint8_t*)html, strlen(html), HAL_MAX_DELAY);
+
+            // "SEND OK" URC 대기
+            match = 0;
+            start = HAL_GetTick();
+            while (HAL_GetTick() - start < SEND_TIMEOUT)
+            {
+                if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK)
+                {
+                    if (ch == sendOk[match])
+                    {
+                        if (++match == (int)strlen(sendOk))
+                        {
+                            break;
+                        }
+                    }
+                    else
+                    {
+                        match = 0;
+                    }
+                }
+            }
+
+            // 연결 종료
+            snprintf(cmd, sizeof(cmd), "AT+CIPCLOSE=%hu\r\n", linkID);
+            ESP_AT_Send_Command_Sync_Get_Result(cmd);
+            // 다음 요청 대기
+            continue;
+        }
+
+        if (isIcon)
+        {
+            bodyLen = 0;
+            hdrLen = snprintf(respHdr, sizeof(respHdr),
+                "HTTP/1.1 204 No Content\r\n"
+                "Connection: close\r\n"
+                "\r\n");
+        }
+        else
+        {
+            // bodyLen = htmlBody_inline_2Len; // 위에서 정의함
+            hdrLen = snprintf(respHdr, sizeof(respHdr),
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/html; charset=utf-8\r\n"
+                "Content-Length: %d\r\n"
+                "Connection: close\r\n"
+                "\r\n",
+                bodyLen);
+        }
+        if (hdrLen < 0 || hdrLen >= (int)sizeof(respHdr))
+        {
+            // return;
+            goto IPD_START; // 재시도
+        }
+
+        // 만약 /quit 요청이면 STM32 쪽으로 UART1 신호 전송
+        if (isLed)
+        {
+            // const char stmMsg[] = "JS+LED\r\n";
+            // // HAL_UART_Transmit(&huart1, (uint8_t*)stmMsg, strlen(stmMsg), HAL_MAX_DELAY);
+            // // 인터럽트로 전송
+            // HAL_UART_Transmit_IT(&huart1, (uint8_t*)stmMsg, strlen(stmMsg));
+            // RX_LED_Toggle();
+
+            // wifi ssid 가 FRAM에 저장되어 있는지 확인
+            const char stmMsg[] = "SSID OK\r\n";
+            
+            Load_Wifi_SSID_Status_FRAM();
+            if (g_nWifi_SSID_Status == DEVICE_WIFI_SSID_SET)
+            {
+                HAL_UART_Transmit_IT(&huart1, (uint8_t*)stmMsg, strlen(stmMsg));
+            }
+            else
+            {
+                HAL_UART_Transmit_IT(&huart1, (uint8_t*)"SSID NOT SET\r\n", 15);
+            }
+        }
+
+
+        if (isConnect)
+        {
+            /* 1) 쿼리 파싱 -------------------------------- */
+            char ssid[64]={0}, pw[64]={0};
+            char *params = strchr(url, '?') + 1;        // "ssid=...&pw=..."
+            sscanf(params, "ssid=%63[^&]&pw=%63s", ssid, pw);
+
+            urlDecodeInPlace(ssid);
+            urlDecodeInPlace(pw);                       // 공백·특수문자 처리
+
+            /* 2) ESP‑AT에 접속 명령 ------------------------ */
+            // ESP_AT_Send_Command_Sync("AT+CWMODE=1\r\n");                 // STA only
+            // char cmd[160];
+            // snprintf(cmd, sizeof(cmd), "AT+CWJAP=\"%s\",\"%s\"\r\n", ssid, pw);
+            // const char *joinResp = ESP_AT_Send_Command_Sync_Get_Result(cmd);
+
+            // 접속을 하지 않고 SSID/PW를 FRAM에 저장
+            Save_Wifi_SSID_FRAM(ssid);
+            Save_Wifi_Password_FRAM(pw);
+
+            // 저장 후 브라우저 응답
+            const char *joinResp = "OK"; // 가정: 접속 성공했다고 가정
+
+            /* 3) 브라우저 응답 ----------------------------- */
+            const char *body = strstr(joinResp, "OK") ?
+                "<html><body><h1>저장 시도 중…</h1></body></html>" :
+                "<html><body><h1>저장 실패!</h1></body></html>";
+
+            int bodyLen = strlen(body);
+            int hdrLen  = snprintf(respHdr, sizeof(respHdr),
+                "HTTP/1.1 200 OK\r\n"
+                "Content-Type: text/html\r\n"
+                "Content-Length: %d\r\n"
+                "Connection: close\r\n\r\n", bodyLen);
+
+            SendViaCipSend(linkID, respHdr, hdrLen, body, bodyLen);      // 기존 헬퍼 재사용
+            continue;
+        }
+
+        // -------------------------------------
+
+        // — 6) AT+CIPSEND=<linkID>,<hdrLen+bodyLen>
+        cmdLen = snprintf(cmd, sizeof(cmd), "AT+CIPSEND=%hu,%d\r\n",
+                        linkID, hdrLen + bodyLen);
+        if (cmdLen < 0 || cmdLen >= (int)sizeof(cmd))
+        {
+            return;
+        }
+
+        HAL_UART_Transmit(&huart2, (uint8_t*)cmd, cmdLen, HAL_MAX_DELAY);
+
+        // -------------------------------------
+
+        // — 7) '>' 프롬프트 대기
+        start = HAL_GetTick();
+        do {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK &&
+                ch == '>')
+            {
+                break;
+            }
+        } while (HAL_GetTick() - start < RX_TIMEOUT);
+
+        // -------------------------------------
+
+        // — 8) 헤더/바디 전송
+        HAL_UART_Transmit(&huart2, (uint8_t*)respHdr, hdrLen, HAL_MAX_DELAY);
+        // HAL_UART_Transmit(&huart1, (uint8_t*)respHdr, hdrLen, HAL_MAX_DELAY);
+        if (!isIcon)
+        {
+            // HAL_UART_Transmit(&huart2, (uint8_t*)htmlBody_inline_2, htmlBody_inline_2Len, HAL_MAX_DELAY);
+            // 위에서 정의한 body 변수를 사용
+            HAL_UART_Transmit(&huart2, (uint8_t*)body, bodyLen, HAL_MAX_DELAY);
+        }
+
+        // -------------------------------------
+
+        // — 9) "SEND OK" URC 대기
+        // const char sendOk[] = "SEND OK";
+        match = 0;
+        start = HAL_GetTick();
+        while (HAL_GetTick() - start < SEND_TIMEOUT)
+        {
+            if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK)
+            {
+                if (ch == sendOk[match])
+                {
+                    if (++match == (int)strlen(sendOk))
+                    {
+                        break;
+                    }
+                }
+                else
+                {
+                    match = 0;
+                }
+            }
+        }
+
+        // -------------------------------------
+
+        // — 10) 연결 종료
+        // HAL_Delay(50);
+        cmdLen = snprintf(cmd, sizeof(cmd), "AT+CIPCLOSE=%hu\r\n", linkID);
+        ESP_AT_Send_Command_Sync_Get_Result(cmd);
+        break; // HTML 응답 후 루프 종료
+    }
+}
+
+
+
+// ──────────────────────────────────────────────────────────────────────────────
+
+
+/* ──────────────────────────────────────────────────────────
+ * ESP‑AT  CIPSEND 편의 함수
+ * linkID  : +IPD 로 받은 링크 ID
+ * hdr/hdrLen : HTTP 헤더
+ * body/bodyLen : HTTP 바디(없으면 NULL/0)
+ * ────────────────────────────────────────────────────────── */
+static void SendViaCipSend(uint16_t linkID,
+                           const char *hdr,  int hdrLen,
+                           const char *body, int bodyLen)
+{
+    char cmd[32];
+    int  cmdLen;
+
+    /* 1) AT+CIPSEND=<linkID>,<bytes> -------------------------------- */
+    cmdLen = snprintf(cmd, sizeof(cmd),
+                      "AT+CIPSEND=%hu,%d\r\n",
+                      linkID, hdrLen + bodyLen);
+    HAL_UART_Transmit(&huart2, (uint8_t*)cmd, cmdLen, HAL_MAX_DELAY);
+
+    /* 2) '>' 프롬프트 대기 ---------------------------------------- */
+    uint8_t ch;
+    uint32_t t0 = HAL_GetTick();
+    while (HAL_GetTick() - t0 < RX_TIMEOUT) {
+        if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK &&
+            ch == '>') {
+            break;
+        }
+    }
+
+    /* 3) 헤더 + 바디 전송 ----------------------------------------- */
+    HAL_UART_Transmit(&huart2, (uint8_t*)hdr, hdrLen, HAL_MAX_DELAY);
+    if (bodyLen > 0 && body)
+        HAL_UART_Transmit(&huart2,(uint8_t*)body,bodyLen,HAL_MAX_DELAY);
+
+    /* 4) "SEND OK" 확인 ------------------------------------------- */
+    const char ok[] = "SEND OK";
+    int  match = 0;
+    t0 = HAL_GetTick();
+    while (HAL_GetTick() - t0 < SEND_TIMEOUT) {
+        if (HAL_UART_Receive(&huart2, &ch, 1, RX_TIMEOUT) == HAL_OK) {
+            match = (ch == ok[match]) ? match + 1 : 0;
+            if (match == (int)sizeof(ok)-1) break;     /* 완료 */
+        }
+    }
+
+    /* 5) 링크 종료 -------------------------------------------------- */
+    cmdLen = snprintf(cmd, sizeof(cmd),
+                      "AT+CIPCLOSE=%hu\r\n", linkID);
+    ESP_AT_Send_Command_Sync_Get_Result(cmd);          /* 응답은 무시해도 OK */
+}
+
+
+
+
+// ──────────────────────────────────────────────────────────────────────────────
+// --------+CWLAP 라인들을 HTML <li>목록으로 바꿔 캐시에 넣기 ------------- 
+void parseCwlapToHtml(const char *src, char *dst, size_t dstLen)
+{
+    /* strtok 이 원본을 수정하므로 임시 버퍼 준비 */
+    char tmp[RESP_BUF_SIZE];
+    strncpy(tmp, src, sizeof(tmp));
+
+    size_t pos = 0;
+    char *line = strtok(tmp, "\r\n");
+
+    while (line) {
+        if (strncmp(line, "+CWLAP:", 7) == 0) {
+            char ssid[64]; int rssi;
+            if (sscanf(line,
+                       "+CWLAP:(%*d,\"%63[^\"]\",%d", ssid, &rssi) == 2)
+            {
+                // Handle_IPD_and_Respond_6 사용시 아래
+                // pos += snprintf(dst+pos, dstLen-pos,
+                //                 "<li>%s (%ddBm)</li>", ssid, rssi);
+                
+                // Handle_IPD_and_Respond_7 사용시 아래
+                // 라디오 버튼 기능을 위해 변경
+                pos += snprintf(dst+pos, dstLen-pos,
+                                "<li data-ssid=\"%s\">%s (%ddBm)</li>", ssid, ssid, rssi);
+                if (pos > dstLen-64) break;   // 가드
+            }
+        }
+        line = strtok(NULL, "\r\n");
+    }
+    if (pos == 0) {
+        strncpy(dst, "<li>No networks found</li>", dstLen);
+    }
+}
+
+
+
+// HTTP 쿼리스트링에 들어오는 “퍼센트 인코딩”(URL encoding)을
+// 평문 문자열로 되돌리는 함수
+// 예: "Hello%20World" → "Hello World"
+void urlDecodeInPlace(char *s)
+{
+    char *p=s, *q=s;
+    while (*p) {
+        if (*p=='%' && isxdigit(p[1]) && isxdigit(p[2])) {
+            int v;
+            sscanf(p+1,"%2x",&v);
+            *q++ = (char)v; p+=3;
+        } else if (*p=='+') { *q++=' '; p++; }
+        else { *q++=*p++; }
+    }
+    *q = '\0';
 }

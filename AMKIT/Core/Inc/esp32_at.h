@@ -9,12 +9,13 @@
 #define INC_ESP32_AT_H_
 
 #include <stdint.h>
-
+#include <stddef.h>
 
 
 #define AT_RESP_BUF_SIZE 128            // AT 명령어 응답 버퍼 크기
 #define AT_RX_BUF_SIZE  64              // AT 명령어 수신 버퍼 크기
 #define AT_END_MARKER "OK\r\n"          // AT 명령어 응답 끝 마커
+
 
 
 // UTC 오프셋 정의
@@ -45,6 +46,17 @@ typedef struct tag_AT_UTC_Time
 PAT_UTC_Time AT_Get_UTC_Time(void);
 
 
+// wifi 관련 구조체
+typedef struct tag_AT_WiFi_Info
+{
+    char ssid[64];       // WiFi SSID
+    char password[64];   // WiFi 비밀번호
+} AT_WiFi_Info, *PAT_WiFi_Info;
+
+PAT_WiFi_Info AT_Get_WiFi_Info(void);
+
+
+
 // g_atRxByte extern
 extern uint8_t g_atRxByte;
 
@@ -73,6 +85,7 @@ enum ESP_AT_Status
 
 // CCMRAM 초기화
 void UTC_Time_Init(void);
+void WiFi_Info_Init(void);
 
 // ===========================================================
 
@@ -110,6 +123,13 @@ void Handle_IPD_and_Respond(void);      // 가장 동작 잘하는 HTML 함수
 void Handle_IPD_and_Respond_1(void);
 void Handle_IPD_and_Respond_2(void);    // HTML CSS 함수 - 작동 오류
 void Handle_IPD_and_Respond_3(void);    // HTML에 CSS 스타일을 직접 기입함 - 작동 잘함
-void Handle_IPD_and_Respond_4(void);
+void Handle_IPD_and_Respond_4(void);    // HTML에 CSS JS를 기입하고 LED 동작 테스트
+void Handle_IPD_and_Respond_5(void);    // HTML에 CSS JS를 직접 기입함, wifi 리스트 추가
+void Handle_IPD_and_Respond_6(void);    // 와이파이 목록 갱신 기능 추가
+void Handle_IPD_and_Respond_7(void);    // 라디오 박스 체크 와이파이 기능 추가
 
+static void SendViaCipSend(uint16_t linkID, const char *hdr, int hdrLen, const char *body, int bodyLen);
+
+void parseCwlapToHtml(const char *src, char *dst, size_t dstLen);
+void urlDecodeInPlace(char *s);
 #endif /* INC_ESP32_AT_H_ */

@@ -9,6 +9,8 @@
 #include "operate.h"
 #include "main.h"
 
+// 한 줄 읽기용 타임아웃(ms)
+#define UART2_LINE_TIMEOUT   1000
 
 
 uint8_t g_nMac_Status = DEVICE_MAC_NOT_SET;           // MAC 주소 상태 (0: MAC 주소 없음, 1: MAC 주소 있음)
@@ -30,6 +32,7 @@ int g_nBoot_Step = 0;
 void Oper_CCM_Init(void)
 {
     UTC_Time_Init();      // UTC 시간 초기화
+    WiFi_Info_Init();     // WiFi 정보 초기화
     SERVER_API_Init();    // 서버 API 초기화
     DEVICE_Init();        // 디바이스 초기화
 }
@@ -419,7 +422,7 @@ void Oper_Boot(void)
     
     // ──────────────────────────────────────────────────────────────────────────────
     // ──────────────────────────────────────────────────────────────────────────────
-    // ──────────────────────────────────────────────────────────────────────────────
+    
 
 #if 0
     SD_Card_Boot(); // SD 카드 초기화 및 테스트 / 와이파이 파일 확인
@@ -485,4 +488,45 @@ void Oper_Boot(void)
         Save_TimeStatus_FRAM(); // FRAM에 시간 동기화 상태 저장
     }
 #endif
+}
+
+// ──────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────────────────────────────────────
+
+/**
+ * @brief  UART2로부터 한 줄을 읽어 옵니다. ('\n'까지 포함)
+ * @param  buf    읽어온 문자열을 담을 버퍼
+ * @param  maxLen buf의 최대 길이 (널 종료 포함)
+ * @retval true   한 줄을 성공적으로 읽음 (buf에 널종료 포함)
+ * @retval false  타임아웃 발생으로 읽기 실패
+ */
+int readLineFromUart2(char *buf, size_t maxLen)
+{
+    uint8_t  ch;
+    size_t   pos   = 0;
+    uint32_t start = HAL_GetTick();
+
+    while ((HAL_GetTick() - start) < UART2_LINE_TIMEOUT)
+    {
+        // 1바이트씩 읽되, 짧은 타임아웃으로 폴링
+        if (HAL_UART_Receive(&huart2, &ch, 1, 10) == HAL_OK)
+        {
+            // 버퍼가 넘치지 않게 저장
+            if (pos < maxLen - 1)
+            {
+                buf[pos++] = (char)ch;
+            }
+            start = HAL_GetTick();  // 문자를 받았으니 타임아웃 리셋
+
+            // 줄바꿈(또는 버퍼 가득)되면 종료
+            if (ch == '\n' || pos >= maxLen - 1)
+                break;
+        }
+    }
+
+    if (pos == 0)
+        return 0;   // 한 글자도 못 읽음 → 실패
+
+    buf[pos] = '\0';   // 널종료
+    return 1;
 }
